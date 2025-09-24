@@ -10,7 +10,7 @@ TEMPLATE_DIR = os.path.join(BASE_DIR, 'templates')
 SECRET_KEY = 'h-coxka0aobqz_#@qjj5ip0n%^*iyy*4@kari+(44am-03a=zw'
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
 # Application definition
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -163,3 +163,4 @@ EMAIL_HOST_USER = 'shamsurrehman2010@gmail.com'
 EMAIL_HOST_PASSWORD='ykccfowsacybvitt'
 ################################################################
 FRONTEND_URL = 'http://127.0.0.1:8000/api/user/'  # Update with your frontend URL
+
