@@ -16,7 +16,7 @@ SECRET_KEY = 'h-coxka0aobqz_#@qjj5ip0n%^*iyy*4@kari+(44am-03a=zw'
 DEBUG = True
 
 # ✅ Updated hosts so PHP or any LAN client can connect
-ALLOWED_HOSTS = ['127.0.0.1', 'localhost', '192.168.1.100']  # ← replace with your machine’s LAN IP if different
+ALLOWED_HOSTS = ['127.0.0.1', 'localhost', '.onrender.com']  # ← replace with your machine’s LAN IP if different
 
 # Application definition
 INSTALLED_APPS = [
@@ -140,3 +140,4 @@ EMAIL_HOST_USER = 'shamsurrehman2010@gmail.com'
 EMAIL_HOST_PASSWORD = 'ykccfowsacybvitt'
 
 FRONTEND_URL = 'http://127.0.0.1:8000/api/user/'  # Update with your frontend URL
+
