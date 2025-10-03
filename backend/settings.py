@@ -66,16 +66,18 @@ TEMPLATES = [
 WSGI_APPLICATION = 'backend.wsgi.application'
 
 # ── Database configuration ─────────────────────────────────────
+# ── Database configuration ─────────────────────────────────────
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'Customer_Loyalty',
-        'USER': 'postgres',
-        'PASSWORD': 'root',
-        'HOST': 'localhost',   # Update this if your PostgreSQL is hosted on a remote server
-        'PORT': '5432',        # Default PostgreSQL port
+        'NAME': 'customer_loyalty_kuhc',
+        'USER': 'customer_loyalty_kuhc_user',
+        'PASSWORD': 'z9WOcp9a5gEphBF21PiTKTaJjqoHxqsK',
+        'HOST': 'dpg-d3fsjts9c44c73dicja0-a.oregon-postgres.render.com',
+        'PORT': '5432',
     }
 }
+
 
 AUTH_USER_MODEL = 'User_App.User'
 
@@ -140,4 +142,5 @@ EMAIL_HOST_USER = 'shamsurrehman2010@gmail.com'
 EMAIL_HOST_PASSWORD = 'ykccfowsacybvitt'
 
 FRONTEND_URL = 'http://127.0.0.1:8000/api/user/'  # Update with your frontend URL
+
 
