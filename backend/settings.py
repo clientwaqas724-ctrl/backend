@@ -70,10 +70,10 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'customer_loyalty_kuhc',
-        'USER': 'customer_loyalty_kuhc_user',
-        'PASSWORD': 'z9WOcp9a5gEphBF21PiTKTaJjqoHxqsK',
-        'HOST': 'dpg-d3fsjts9c44c73dicja0-a.oregon-postgres.render.com',
+        'NAME': 'customer_loyalty_4xfm',
+        'USER': 'customer_loyalty_4xfm_user',
+        'PASSWORD': '8a5tBOmtr4x7jqLCK8k9OgrRfENHhP9J',
+        'HOST': 'dpg-d3g2e53e5dus73aj0q4g-a.oregon-postgres.render.com',
         'PORT': '5432',
     }
 }
@@ -140,6 +140,7 @@ EMAIL_HOST_USER = 'shamsurrehman2010@gmail.com'
 EMAIL_HOST_PASSWORD = 'ykccfowsacybvitt'
 
 FRONTEND_URL = 'http://127.0.0.1:8000/api/user/'  # Update with your frontend URL
+
 
 
 
