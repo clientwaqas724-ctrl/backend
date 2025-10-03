@@ -1,1 +1,10 @@
+services:
+  - type: web
+    name: http://127.0.0.1:8000/
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn backend.wsgi"
+    postdeploy: |
+      python manage.py makemigrations --noinput
+      python manage.py migrate --noinput
 
