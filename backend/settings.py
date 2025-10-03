@@ -99,8 +99,6 @@ USE_TZ = True
 # Static & Media files
 STATIC_URL = '/static/'
 STATICFILES_DIRS = [os.path.join(BASE_DIR, 'static')]
-STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
-
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
@@ -142,5 +140,6 @@ EMAIL_HOST_USER = 'shamsurrehman2010@gmail.com'
 EMAIL_HOST_PASSWORD = 'ykccfowsacybvitt'
 
 FRONTEND_URL = 'http://127.0.0.1:8000/api/user/'  # Update with your frontend URL
+
 
 
