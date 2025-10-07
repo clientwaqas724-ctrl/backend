@@ -222,3 +222,12 @@ class UserActivitySerializer(serializers.ModelSerializer):
             'activity_date'
         ]
         read_only_fields = ['id', 'activity_date']
+# ============================================================
+# Customer Home SERIALIZER
+# ============================================================
+class CustomerHomeSerializer(serializers.Serializer):
+    user = UserPointsSerializer()
+    promotions = PromotionSerializer(many=True)
+    available_coupons = CouponSerializer(many=True)
+    recent_activity = UserActivitySerializer(many=True)
+
