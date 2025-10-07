@@ -9,6 +9,10 @@ from .serializers import MerchantSerializer
 from .serializers import OutletSerializer,CouponSerializer,PromotionSerializer,TierSerializer, UserPointsSerializer, UserActivitySerializer
 ################################################################################################################################################################
 ################################################################################################################################################################
+from .serializers import CustomerHomeSerializer
+from django.utils import timezone
+################################################################################################################################################################
+################################################################################################################################################################
 class MerchantViewSet(viewsets.ModelViewSet):
     """
     Supports:
@@ -254,4 +258,52 @@ class UserActivityViewSet(viewsets.ModelViewSet):
             return self.get_paginated_response(serializer.data)
 
         serializer = self.get_serializer(queryset, many=True)
+
         return Response(serializer.data)
+################################################################################################################################################################
+################################################################################################################################################################
+class CustomerHomeViewSet(viewsets.ViewSet):
+    """
+    Provides:
+      • GET /customer/home/
+    Returns the customer dashboard data including:
+      - user details (points, tier)
+      - promotions
+      - available coupons
+      - recent activity
+    """
+    permission_classes = [IsAuthenticated]
+
+    def list(self, request, *args, **kwargs):
+        user = request.user
+        today = timezone.now().date()
+
+        # 1️⃣ Get user points
+        try:
+            user_points = UserPoints.objects.select_related('tier', 'user').get(user=user)
+        except UserPoints.DoesNotExist:
+            user_points = UserPoints(user=user, total_points=0)
+
+        # 2️⃣ Active promotions
+        promotions = Promotion.objects.filter(start_date__lte=today, end_date__gte=today)
+
+        # 3️⃣ Active coupons
+        coupons = Coupon.objects.filter(status=Coupon.STATUS_ACTIVE)
+
+        # 4️⃣ Recent user activities (limit 5)
+        activities = UserActivity.objects.filter(user=user).order_by('-activity_date')[:5]
+
+        # 5️⃣ Serialize data
+        serializer = CustomerHomeSerializer({
+            "user": user_points,
+            "promotions": promotions,
+            "available_coupons": coupons,
+            "recent_activity": activities
+        })
+
+        # 6️⃣ Final response
+        return Response({
+            "success": True,
+            "message": "Dashboard data retrieved successfully",
+            "data": serializer.data
+        })
