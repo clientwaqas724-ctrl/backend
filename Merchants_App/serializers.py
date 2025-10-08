@@ -231,3 +231,4 @@ class CustomerHomeSerializer(serializers.Serializer):
     available_coupons = CouponSerializer(many=True)
     recent_activity = UserActivitySerializer(many=True)
 
+
