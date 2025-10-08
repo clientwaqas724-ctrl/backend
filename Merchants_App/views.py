@@ -11,6 +11,8 @@ from .serializers import OutletSerializer,CouponSerializer,PromotionSerializer,T
 ################################################################################################################################################################
 from .serializers import CustomerHomeSerializer
 from django.utils import timezone
+from django.shortcuts import get_object_or_404
+from rest_framework.views import APIView
 ################################################################################################################################################################
 ################################################################################################################################################################
 class MerchantViewSet(viewsets.ModelViewSet):
@@ -307,3 +309,80 @@ class CustomerHomeViewSet(viewsets.ViewSet):
             "message": "Dashboard data retrieved successfully",
             "data": serializer.data
         })
+##############################################################################################################################################
+##############################################################################################################################################
+# ============================= Redeem Coupon API =============================
+class RedeemCouponView(APIView):
+    """
+    POST /api/redeem-coupon/
+    Allows a user to redeem a coupon using their available points.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        user = request.user
+        coupon_id = request.data.get("coupon_id")
+
+        # ✅ 1. Validate coupon_id
+        if not coupon_id:
+            return Response(
+                {"success": False, "message": "coupon_id is required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # ✅ 2. Get coupon object
+        coupon = get_object_or_404(Coupon, id=coupon_id)
+
+        # ✅ 3. Check coupon validity
+        if coupon.status != Coupon.STATUS_ACTIVE:
+            return Response(
+                {"success": False, "message": "This coupon is not active."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if coupon.expiry_date < timezone.now().date():
+            return Response(
+                {"success": False, "message": "This coupon has expired."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # ✅ 4. Get user’s current points
+        user_points, created = UserPoints.objects.get_or_create(user=user, defaults={"total_points": 0})
+        if user_points.total_points < coupon.points_required:
+            return Response(
+                {
+                    "success": False,
+                    "message": f"You need {coupon.points_required} points but you only have {user_points.total_points}."
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # ✅ 5. Deduct points
+        user_points.total_points -= coupon.points_required
+        user_points.save()
+
+        # ✅ 6. Log redemption in UserActivity
+        UserActivity.objects.create(
+            user=user,
+            activity_type="redeem_coupon",  # ensure this choice exists in your ACTIVITY_CHOICES
+            description=f"Redeemed coupon: {coupon.title}",
+            points=-coupon.points_required,
+            related_coupon=coupon
+        )
+
+        # ✅ 7. Response
+        return Response(
+            {
+                "success": True,
+                "message": "Coupon redeemed successfully!",
+                "data": {
+                    "coupon": {
+                        "id": str(coupon.id),
+                        "title": coupon.title,
+                    },
+                    "remaining_points": user_points.total_points,
+                },
+            },
+            status=status.HTTP_200_OK
+        )
+
+
