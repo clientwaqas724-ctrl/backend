@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
 from .views import MerchantViewSet,OutletViewSet,CouponViewSet,PromotionViewSet,TierViewSet, UserPointsViewSet, UserActivityViewSet
 from .views import CustomerHomeViewSet
 from .views import RedeemCouponView
+from .views import CustomerCouponsView  # add this import at the top new updated
 router = DefaultRouter()
 router.register(r'merchants',MerchantViewSet)
 router.register(r'outlets',OutletViewSet)   # NEW
@@ -18,6 +19,10 @@ router.register(r'customer/home', CustomerHomeViewSet, basename='customer_home')
 urlpatterns = [
     path('', include(router.urls)),
     path('redeem-coupon/', RedeemCouponView.as_view(), name='redeem-coupon'),
+    ##################################################################################
+    ##new Updated====>
+    path('customer/coupons/', CustomerCouponsView.as_view(), name='customer-coupons'),  # ✅ NEW
 ]
+
 
 
