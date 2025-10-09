@@ -9,7 +9,7 @@ from .serializers import MerchantSerializer
 from .serializers import OutletSerializer,CouponSerializer,PromotionSerializer,TierSerializer, UserPointsSerializer, UserActivitySerializer
 ################################################################################################################################################################
 ################################################################################################################################################################
-from .serializers import CustomerHomeSerializer
+from .serializers import CustomerHomeSerializer,RedeemedCouponSerializer
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from rest_framework.views import APIView
@@ -384,5 +384,47 @@ class RedeemCouponView(APIView):
             },
             status=status.HTTP_200_OK
         )
+##############################################################################################################################################
+##############################################################################################################################################
+# ============================= CUSTOMER COUPONS LIST API =============================new updated
+class CustomerCouponsView(APIView):
+    """
+    GET /api/customer/coupons/
+    Returns:
+      - available_coupons (active and not expired)
+      - redeemed_coupons (from user activity)
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        today = timezone.now().date()
+
+        # ✅ Available coupons (active and not expired)
+        available_coupons = Coupon.objects.filter(
+            status=Coupon.STATUS_ACTIVE,
+            expiry_date__gte=today
+        )
+
+        available_coupons_data = CouponSerializer(available_coupons, many=True).data
+
+        # ✅ Redeemed coupons (based on UserActivity)
+        redeemed_activities = UserActivity.objects.filter(
+            user=user,
+            activity_type='redeem_coupon'
+        ).select_related('related_coupon').order_by('-activity_date')
+
+        redeemed_coupons_data = RedeemedCouponSerializer(redeemed_activities, many=True).data
+
+        # ✅ Final response
+        return Response(
+            {
+                "available_coupons": available_coupons_data,
+                "redeemed_coupons": redeemed_coupons_data,
+            },
+            status=status.HTTP_200_OK
+        )
+
+
 
 
