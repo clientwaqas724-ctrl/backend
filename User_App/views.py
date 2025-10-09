@@ -29,6 +29,7 @@ def get_tokens_for_user(user):
         'access': str(refresh.access_token),
     }
 #############################################################################################################################################################
+import uuid   # ✅ added for unique QR generation
 ################################################################################################################################################################
 class UserRegistrationView(APIView):
     permission_classes = [AllowAny]
@@ -54,21 +55,29 @@ class UserRegistrationView(APIView):
 ################################################################################################################################################################
 class UserLoginView(APIView):
     permission_classes = [AllowAny]
-
     def post(self, request):
         serializer = UserLoginSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             user = serializer.validated_data['user']
             token = get_tokens_for_user(user)
+            # ✅ Generate a temporary unique ID for QR generation
+            unique_qr_id = str(uuid.uuid4())
+            # ✅ Build absolute image URL if available
+            image_path = (
+                request.build_absolute_uri(user.profile_image)
+                if user.profile_image else None
+            )
             return Response({
                 'token': token,
                 'message': 'Login Successful',
                 'user': {
-                    'id': user.id,
+                    'id': str(user.id),
                     'email': user.email,
                     'name': user.name,
                     'role': user.role,
-                    'phone': user.phone
+                    'phone': user.phone,
+                    'profile_image': image_path,
+                    'unique_qr_id': unique_qr_id,  # ✅ Added unique temporary ID
                 }
             }, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -208,3 +217,4 @@ class ChangePasswordView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 #############################################################################################################################################################
 ################################################################################################################################################################
+
