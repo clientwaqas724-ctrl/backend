@@ -138,8 +138,10 @@ EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = 'shamsurrehman2010@gmail.com'
 EMAIL_HOST_PASSWORD = 'ykccfowsacybvitt'
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 FRONTEND_URL = 'http://127.0.0.1:8000/api/user/'  # Update with your frontend URL
+
 
 
 
