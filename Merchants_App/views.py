@@ -13,6 +13,10 @@ from .serializers import CustomerHomeSerializer,RedeemedCouponSerializer
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from rest_framework.views import APIView
+from django.db.models import Sum, Count
+from django.utils.timezone import now
+from datetime import timedelta
+from django.db.models import Sum, Count, Q
 ################################################################################################################################################################
 ################################################################################################################################################################
 class MerchantViewSet(viewsets.ModelViewSet):
@@ -424,6 +428,115 @@ class CustomerCouponsView(APIView):
             },
             status=status.HTTP_200_OK
         )
+##############################################################################################################################################
+##############################################################################################################################################
+class MerchantDashboardView(APIView):
+    """
+    GET /api/merchant/dashboard/
+    Returns a dashboard summary for the logged-in merchant.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        user = request.user
+
+        # ✅ 1. Ensure user is a merchant
+        try:
+            merchant = Merchant.objects.get(user=user)
+        except Merchant.DoesNotExist:
+            return Response(
+                {"success": False, "message": "Merchant account not found for this user."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        today = timezone.now().date()
+        start_of_day = timezone.make_aware(
+            timezone.datetime.combine(today, timezone.datetime.min.time())
+        )
+
+        # ✅ 2. Merchant Info
+        merchant_info = {
+            "id": str(merchant.id),
+            "business_name": merchant.company_name,
+            "total_outlets": merchant.outlets.count(),
+            "total_customers": UserActivity.objects.filter(
+                related_coupon__merchant=merchant
+            ).values("user").distinct().count(),
+            "member_since": merchant.created_at.date(),
+        }
+
+        # ✅ 3. Today's Stats (mock aggregation example)
+        scans_today = UserActivity.objects.filter(
+            related_coupon__merchant=merchant,
+            activity_type="earned",
+            activity_date__gte=start_of_day,
+        ).count()
+
+        points_awarded_today = UserActivity.objects.filter(
+            related_coupon__merchant=merchant,
+            activity_type="earned",
+            activity_date__gte=start_of_day,
+        ).aggregate(total=Sum("points"))["total"] or 0
+
+        coupons_redeemed_today = UserActivity.objects.filter(
+            related_coupon__merchant=merchant,
+            activity_type="redeemed",
+            activity_date__gte=start_of_day,
+        ).count()
+
+        today_stats = {
+            "scans_today": scans_today,
+            "points_awarded_today": points_awarded_today,
+            "coupons_redeemed_today": coupons_redeemed_today,
+            "revenue_impact": f"${points_awarded_today * 2.5:,.0f}",  # 💡 Example logic
+        }
+
+        # ✅ 4. Recent Transactions (limit 5)
+        recent_activities = (
+            UserActivity.objects.filter(related_coupon__merchant=merchant)
+            .select_related("user", "related_coupon")
+            .order_by("-activity_date")[:5]
+        )
+
+        recent_transactions = []
+        for act in recent_activities:
+            recent_transactions.append({
+                "id": str(act.id),
+                "customer_name": getattr(act.user, "full_name", act.user.email),
+                "customer_id": str(act.user.id),
+                "points_awarded": act.points,
+                "transaction_type": act.activity_type,
+                "outlet_name": act.related_coupon.merchant.company_name if act.related_coupon else "N/A",
+                "outlet_id": str(act.related_coupon.id) if act.related_coupon else None,
+                "timestamp": act.activity_date.isoformat(),
+                "location": "N/A"  # Could be filled using outlet geodata if linked
+            })
+
+        # ✅ 5. Active Outlets
+        active_outlets = []
+        for outlet in merchant.outlets.all():
+            active_outlets.append({
+                "id": str(outlet.id),
+                "name": outlet.name,
+                "location": outlet.address,
+                "is_active": True,  # Could be dynamic
+                "scans_today": scans_today // max(1, merchant.outlets.count()),
+                "total_customers": UserActivity.objects.filter(
+                    related_coupon__merchant=merchant
+                ).values("user").distinct().count() // max(1, merchant.outlets.count())
+            })
+
+        # ✅ 6. Final Response
+        return Response({
+            "success": True,
+            "message": "Dashboard data retrieved successfully",
+            "data": {
+                "merchant_info": merchant_info,
+                "today_stats": today_stats,
+                "recent_transactions": recent_transactions,
+                "active_outlets": active_outlets,
+            },
+        }, status=status.HTTP_200_OK)
 
 
 
