@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import User
+from .models import User,QRScan,CustomerPoints
 class CustomUserAdmin(UserAdmin):
     list_display = (
         'email',
@@ -52,9 +52,30 @@ class CustomUserAdmin(UserAdmin):
     search_fields = ('email', 'name', 'phone')
     ordering = ('email',)
     readonly_fields = ('created_at', 'updated_at')
+#######################################################################################################################################
+###########################################################################################################
+# QRScan Admin
+###########################################################################################################
+@admin.register(QRScan)
+class QRScanAdmin(admin.ModelAdmin):
+    list_display = ('customer', 'qr_code', 'points_awarded', 'scanned_at')
+    list_filter = ('scanned_at',)
+    search_fields = ('customer__email', 'qr_code')
+    ordering = ('-scanned_at',)
+
+###########################################################################################################
+# CustomerPoints Admin
+###########################################################################################################
+@admin.register(CustomerPoints)
+class CustomerPointsAdmin(admin.ModelAdmin):
+    list_display = ('customer', 'total_points')
+    search_fields = ('customer__email',)
+    ordering = ('-total_points',)
+##########################################################
 # Register the custom user model with the custom admin
 admin.site.register(User, CustomUserAdmin)
 # ---- Custom Admin Site Titles ----
 admin.site.site_header = "Customer_Loyalty_Platform – User Management"
 admin.site.site_title = "Customer_Loyalty_Platform Admin"
 admin.site.index_title = "Customer_Loyalty_Platform Administration"
+
