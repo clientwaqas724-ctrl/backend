@@ -9,6 +9,8 @@ from .views import (
     ChangePasswordView,
     UserSearchView
 )
+########################################################################################
+from .views import UserProfileUpdateView
 ################################################################################################################
 urlpatterns = [
     path('register/', UserRegistrationView.as_view(), name='register'),
@@ -19,5 +21,8 @@ urlpatterns = [
     path('forgot-password/', ForgotPasswordView.as_view(), name='forgot-password'),
     path('reset-password/', ResetPasswordView.as_view(), name='reset-password'),
     path('change-password/', ChangePasswordView.as_view(), name='change-password'),
+    #####################################################################################
+    path('profile/update/', UserProfileUpdateView.as_view(), name='profile-update'),  # 👈 added
 ]
 ###############################################################################################
+
