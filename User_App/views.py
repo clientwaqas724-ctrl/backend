@@ -22,6 +22,7 @@ from .serializers import(
     UserProfileUpdateSerializer   #####>=============> new api
 )
 from .models import User
+from .serializers import QRScanSerializer  #########-> new api
 ##############################################################################################################################################################
 ###############################################################################################################################################################
 def get_tokens_for_user(user):
@@ -250,5 +251,22 @@ class UserProfileUpdateView(APIView):
                 'user': UserProfileSerializer(user).data
             }, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+#############################################################################################################################################################
+################################################################################################################################################################
+class QRScanAPIView(APIView):
+    """
+    Customer scans a QR and earns points.
+    Requires authentication.
+    """
+    permission_classes = [IsAuthenticated]
 
-
+    def post(self, request):
+        serializer = QRScanSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            result = serializer.save()
+            return Response({
+                'message': 'QR scanned successfully.',
+                'points_awarded': result['points_awarded'],
+                'total_points': result['total_points']
+            }, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
