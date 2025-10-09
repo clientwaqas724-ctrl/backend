@@ -17,7 +17,9 @@ from .serializers import(
     ForgotPasswordSerializer, 
     ResetPasswordSerializer, 
     ChangePasswordSerializer,
-    UserListSerializer
+    UserListSerializer,
+    ##############################################################################################
+    UserProfileUpdateSerializer   #####>=============> new api
 )
 from .models import User
 ##############################################################################################################################################################
@@ -217,4 +219,36 @@ class ChangePasswordView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 #############################################################################################################################################################
 ################################################################################################################################################################
+class UserProfileUpdateView(APIView):
+    """
+    API for updating user profile (all editable fields)
+    """
+    permission_classes = [IsAuthenticated]
+
+    def put(self, request):
+        user = request.user
+        serializer = UserProfileUpdateSerializer(
+            user, data=request.data, context={'request': request}
+        )
+        if serializer.is_valid():
+            serializer.save()
+            return Response({
+                'message': 'Profile updated successfully.',
+                'user': UserProfileSerializer(user).data
+            }, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def patch(self, request):
+        user = request.user
+        serializer = UserProfileUpdateSerializer(
+            user, data=request.data, partial=True, context={'request': request}
+        )
+        if serializer.is_valid():
+            serializer.save()
+            return Response({
+                'message': 'Profile updated successfully.',
+                'user': UserProfileSerializer(user).data
+            }, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
