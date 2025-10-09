@@ -208,7 +208,7 @@ class UserActivity(models.Model):
         on_delete=models.CASCADE,
         related_name='activities'
     )
-    activity_type = models.CharField(max_length=50, choices=ACTIVITY_CHOICES)
+    activity_type = models.CharField(max_length=1000, choices=ACTIVITY_CHOICES)
     description = models.TextField()
     points = models.IntegerField()  # +ve for earned, -ve for redeemed
     related_coupon = models.ForeignKey(
@@ -228,4 +228,5 @@ class UserActivity(models.Model):
 
     def __str__(self):
         return f"{self.user.email} - {self.activity_type} - {self.points} points"
+
 
