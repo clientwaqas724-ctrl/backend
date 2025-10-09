@@ -231,4 +231,25 @@ class CustomerHomeSerializer(serializers.Serializer):
     available_coupons = CouponSerializer(many=True)
     recent_activity = UserActivitySerializer(many=True)
 
+# ============================================================
+# Customer REDEEMED COUPON SERIALIZER
+# ============================================================
+class RedeemedCouponSerializer(serializers.ModelSerializer):
+    title = serializers.CharField(source='related_coupon.title', read_only=True)
+    redeemed_date = serializers.DateTimeField(source='activity_date', read_only=True)
+    status = serializers.SerializerMethodField()
+    points_used = serializers.SerializerMethodField()
+
+    class Meta:
+        model = UserActivity
+        fields = ['id', 'title', 'redeemed_date', 'status', 'points_used']
+
+    def get_status(self, obj):
+        return "redeemed"
+
+    def get_points_used(self, obj):
+        return abs(obj.points)  # ensure positive integer
+
+
+
 
