@@ -100,7 +100,43 @@ class User(AbstractBaseUser, PermissionsMixin):
             return True
         # merchants/customers: limit as needed
         return app_label in ['auth']
-
     @property
     def is_admin(self):
         return self.role == self.ADMIN or self.is_superuser
+##############################################################################################################################################
+##############################################################################################################################################
+###########################################################################################################
+# QRScan & CustomerPoints Models=======> new
+###########################################################################################################
+class QRScan(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    customer = models.ForeignKey('User', on_delete=models.CASCADE, related_name='qr_scans')
+    qr_code = models.CharField(max_length=255)
+    points_awarded = models.PositiveIntegerField(default=0)
+    scanned_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.customer.email} scanned {self.qr_code} ({self.points_awarded} pts)"
+###########################################################################################################
+class CustomerPoints(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    customer = models.OneToOneField('User', on_delete=models.CASCADE, related_name='points_wallet')
+    total_points = models.PositiveIntegerField(default=0)
+
+    def __str__(self):
+        return f"{self.customer.email} — {self.total_points} pts"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
