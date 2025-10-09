@@ -4,6 +4,7 @@ from django.contrib.auth import authenticate
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.utils.encoding import force_str
 from django.utils.http import urlsafe_base64_decode
+from .models import QRScan, CustomerPoints
 ############################################################################################################################
 ############################################################################################################################
 class UserRegistrationSerializer(serializers.ModelSerializer):
@@ -199,6 +200,33 @@ class UserProfileUpdateSerializer(serializers.ModelSerializer):
         if User.objects.filter(phone=value).exclude(id=user.id).exists():
             raise serializers.ValidationError("This phone number is already taken.")
         return value
+###############################################################################################################################
+################################################################################################################################
+class QRScanSerializer(serializers.Serializer):
+    qr_code = serializers.CharField(required=True, error_messages={'required': 'QR code is required.'})
+
+    def validate(self, attrs):
+        user = self.context['request'].user
+        if user.role != 'customer':
+            raise serializers.ValidationError("Only customers can scan QR codes.")
+        return attrs
+
+    def create(self, validated_data):
+        user = self.context['request'].user
+        qr_code = validated_data['qr_code']
+
+        # Simulate point calculation (can depend on merchant QR logic)
+        points_awarded = 10  # you can later make this dynamic
+
+        # Log the scan
+        QRScan.objects.create(customer=user, qr_code=qr_code, points_awarded=points_awarded)
+
+        # Update or create total points
+        wallet, created = CustomerPoints.objects.get_or_create(customer=user)
+        wallet.total_points += points_awarded
+        wallet.save()
+
+        return {'points_awarded': points_awarded, 'total_points': wallet.total_points}
 
 
 
