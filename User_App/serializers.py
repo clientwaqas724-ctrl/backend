@@ -179,3 +179,31 @@ class ChangePasswordSerializer(serializers.Serializer):
         return attrs
 ###############################################################################################################################
 ################################################################################################################################
+class UserProfileUpdateSerializer(serializers.ModelSerializer):
+    """
+    Serializer for updating the user's full profile details.
+    Allows changing all editable fields.
+    """
+    class Meta:
+        model = User
+        fields = ['name', 'email', 'phone', 'role', 'profile_image', 'tc']
+
+    def validate_email(self, value):
+        user = self.context['request'].user
+        if User.objects.filter(email=value).exclude(id=user.id).exists():
+            raise serializers.ValidationError("This email is already taken.")
+        return value
+
+    def validate_phone(self, value):
+        user = self.context['request'].user
+        if User.objects.filter(phone=value).exclude(id=user.id).exists():
+            raise serializers.ValidationError("This phone number is already taken.")
+        return value
+
+
+
+
+
+
+
+
