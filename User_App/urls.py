@@ -11,6 +11,7 @@ from .views import (
 )
 ########################################################################################
 from .views import UserProfileUpdateView
+from .views import QRScanAPIView  #=======> new update====>
 ################################################################################################################
 urlpatterns = [
     path('register/', UserRegistrationView.as_view(), name='register'),
@@ -23,6 +24,9 @@ urlpatterns = [
     path('change-password/', ChangePasswordView.as_view(), name='change-password'),
     #####################################################################################
     path('profile/update/', UserProfileUpdateView.as_view(), name='profile-update'),  # 👈 added
+    ##############################################################################################################
+    path('qr/scan/', QRScanAPIView.as_view(), name='qr-scan'),   ###+> new updated
 ]
 ###############################################################################################
+
 
