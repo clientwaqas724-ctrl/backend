@@ -33,6 +33,9 @@ def get_tokens_for_user(user):
     }
 #############################################################################################################################################################
 import uuid   # ✅ added for unique QR generation
+from Merchants_App.models import Merchant, Outlet, Coupon, UserActivity, UserPoints
+from datetime import date, timedelta
+from django.db.models import Count, Sum
 ################################################################################################################################################################
 class UserRegistrationView(APIView):
     permission_classes = [AllowAny]
@@ -42,6 +45,14 @@ class UserRegistrationView(APIView):
         if serializer.is_valid():
             user = serializer.save()
             token = get_tokens_for_user(user)
+
+            # ✅ Automatically create Merchant record if role is 'merchant'
+            if user.role == 'merchant':
+                Merchant.objects.create(
+                    user=user,
+                    company_name=request.data.get('company_name', f"{user.name}'s Business")
+                )
+
             return Response({
                 'token': token,
                 'message': 'Registration Successful',
@@ -270,3 +281,4 @@ class QRScanAPIView(APIView):
                 'total_points': result['total_points']
             }, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
