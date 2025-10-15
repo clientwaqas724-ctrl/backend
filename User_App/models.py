@@ -5,6 +5,9 @@ from django.contrib.auth.models import(
     AbstractBaseUser,
     PermissionsMixin
 )
+import qrcode
+import io
+import base64
 ################################################################################################################################################
 ################################################################################################################################################
 class UserManager(BaseUserManager):
@@ -103,6 +106,30 @@ class User(AbstractBaseUser, PermissionsMixin):
     @property
     def is_admin(self):
         return self.role == self.ADMIN or self.is_superuser
+    ##############################################################################################
+    # ✅ UPDATED: Generate both QR text and image for customers
+    def generate_qr_code(self):
+        """
+        Generates the customer's personal QR code.
+
+        Returns:
+        {
+            "qr_text": "user:<uuid>",
+            "qr_image": "data:image/png;base64,<...>"
+        }
+        """
+        qr_text = f"user:{self.id}"  # this is what the merchant scans
+
+        # Create QR image
+        qr_img = qrcode.make(qr_text)
+        buffer = io.BytesIO()
+        qr_img.save(buffer, format="PNG")
+        qr_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+        return {
+            "qr_text": qr_text,
+            "qr_image": f"data:image/png;base64,{qr_base64}"
+        }
 ##############################################################################################################################################
 ##############################################################################################################################################
 ###########################################################################################################
@@ -125,6 +152,7 @@ class CustomerPoints(models.Model):
 
     def __str__(self):
         return f"{self.customer.email} — {self.total_points} pts"
+
 
 
 
