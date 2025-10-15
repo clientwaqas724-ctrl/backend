@@ -629,7 +629,7 @@ class MerchantDashboardAnalyticsView(APIView):
 class MerchantScanQRAPIView(APIView):
     """
     POST /api/merchant/scan-qr/
-    Body: { "qr_code": "user:<uuid>", "points": 10 }
+    Body: { "qr_code": "user:<uuid>", "points": 10, "outlet_id": "...", "coupon_id": "..." }
     Only merchant users can call this.
     """
     permission_classes = [IsAuthenticated]
@@ -641,14 +641,20 @@ class MerchantScanQRAPIView(APIView):
                             status=status.HTTP_403_FORBIDDEN)
 
         qr_code = request.data.get('qr_code')
-        points = int(request.data.get('points', 10))  # default = 10 points
+        points = request.data.get('points', 10)
 
-        # Parse QR and get the customer
+        # Validate points as integer
         try:
-            customer_id = qr_code.split(":")[1]
-            customer = User.objects.get(id=customer_id, role='customer')
-        except Exception:
-            return Response({'error': 'Invalid QR code.'}, status=status.HTTP_400_BAD_REQUEST)
+            points = int(points)
+        except ValueError:
+            return Response({'error': 'Points must be an integer.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not qr_code or not qr_code.startswith("user:"):
+            return Response({'error': 'Invalid QR code format.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Extract customer ID from QR code
+        customer_id = qr_code.split("user:")[1]
+        customer = get_object_or_404(User, id=customer_id, role='customer')
 
         # Record the QR scan
         QRScan.objects.create(customer=customer, qr_code=qr_code, points_awarded=points)
@@ -658,38 +664,32 @@ class MerchantScanQRAPIView(APIView):
         wallet.total_points += points
         wallet.save()
 
+        # Get merchant profile
+        merchant_account = user.merchants.first()
+        if not merchant_account:
+            return Response({'error': 'Merchant profile not found.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Optional: get outlet or coupon
+        outlet = None
+        if 'outlet_id' in request.data:
+            outlet = get_object_or_404(Outlet, id=request.data['outlet_id'])
+
+        coupon = None
+        if 'coupon_id' in request.data:
+            coupon = get_object_or_404(Coupon, id=request.data['coupon_id'])
+
         # Record the transaction
-        merchant_account = user.merchants.first()  # get merchant profile
-        Transaction.objects.create(
+        transaction = Transaction.objects.create(
             user=customer,
             merchant=merchant_account,
-            outlet=None,
+            outlet=outlet,
+            coupon=coupon,
             points=points
         )
 
         return Response({
             'message': f'{points} points awarded to {customer.email}',
-            'total_points': wallet.total_points
+            'total_points': wallet.total_points,
+            'transaction_id': str(transaction.id)
         }, status=status.HTTP_200_OK)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
