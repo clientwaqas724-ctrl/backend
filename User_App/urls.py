@@ -27,8 +27,11 @@ urlpatterns = [
     path('profile/update/', UserProfileUpdateView.as_view(), name='profile-update'),  # 👈 added
     ##############################################################################################################
     path('qr/scan/', QRScanAPIView.as_view(), name='qr-scan'),   ###+> new updated
+    path('my-qr/', MyQRAPIView.as_view(), name='my_qr'),  #=======> new update====>
+
 ]
 ###############################################################################################
+
 
 
 
