@@ -23,6 +23,8 @@ from django.contrib.auth import get_user_model
 from Loyalty_App.models import Transaction
 from User_App.models import User,QRScan
 User = get_user_model()
+from User_App.models import User, QRScan, CustomerPoints   #########newupdated
+from Loyalty_App.models import Transaction   ##########--> new update
 ################################################################################################################################################################
 ################################################################################################################################################################
 class MerchantViewSet(viewsets.ModelViewSet):
@@ -622,6 +624,54 @@ class MerchantDashboardAnalyticsView(APIView):
                 }
             }
         }, status=status.HTTP_200_OK)
+##############################################################################################################################################
+##############################################################################################################################################
+class MerchantScanQRAPIView(APIView):
+    """
+    POST /api/merchant/scan-qr/
+    Body: { "qr_code": "user:<uuid>", "points": 10 }
+    Only merchant users can call this.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        if user.role != 'merchant':
+            return Response({'error': 'Only merchants can scan QR codes.'},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        qr_code = request.data.get('qr_code')
+        points = int(request.data.get('points', 10))  # default = 10 points
+
+        # Parse QR and get the customer
+        try:
+            customer_id = qr_code.split(":")[1]
+            customer = User.objects.get(id=customer_id, role='customer')
+        except Exception:
+            return Response({'error': 'Invalid QR code.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Record the QR scan
+        QRScan.objects.create(customer=customer, qr_code=qr_code, points_awarded=points)
+
+        # Update or create CustomerPoints wallet
+        wallet, _ = CustomerPoints.objects.get_or_create(customer=customer)
+        wallet.total_points += points
+        wallet.save()
+
+        # Record the transaction
+        merchant_account = user.merchants.first()  # get merchant profile
+        Transaction.objects.create(
+            user=customer,
+            merchant=merchant_account,
+            outlet=None,
+            points=points
+        )
+
+        return Response({
+            'message': f'{points} points awarded to {customer.email}',
+            'total_points': wallet.total_points
+        }, status=status.HTTP_200_OK)
+
 
 
 
