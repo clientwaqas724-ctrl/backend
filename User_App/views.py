@@ -23,6 +23,7 @@ from .serializers import(
 )
 from .models import User
 from .serializers import QRScanSerializer  #########-> new api
+from .serializers import MyQRSerializer   #########-> last new Updated
 ##############################################################################################################################################################
 ###############################################################################################################################################################
 def get_tokens_for_user(user):
@@ -281,4 +282,40 @@ class QRScanAPIView(APIView):
                 'total_points': result['total_points']
             }, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+#############################################################################################################################################################
+################################################################################################################################################################
+class MyQRAPIView(APIView):
+    """
+    GET /api/my-qr/
+    Returns the personal QR code of the authenticated customer.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        if user.role != 'customer':
+            return Response(
+                {'error': 'Only customers have personal QR codes.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        qr_data = user.generate_qr_code()  # returns dict
+
+        return Response({
+            'user_id': str(user.id),
+            'email': user.email,
+            'qr_text': qr_data['qr_text'],   # "user:<uuid>"
+            'qr_image': qr_data['qr_image']  # base64 image for display
+        }, status=status.HTTP_200_OK)
+
+
+
+
+
+
+
+
+
+
+
 
