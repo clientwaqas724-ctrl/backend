@@ -227,6 +227,12 @@ class QRScanSerializer(serializers.Serializer):
         wallet.save()
 
         return {'points_awarded': points_awarded, 'total_points': wallet.total_points}
+#######################################################################################################################
+class MyQRSerializer(serializers.Serializer):
+    user_id = serializers.UUIDField()
+    email = serializers.EmailField()
+    qr_code = serializers.CharField()
+
 
 
 
