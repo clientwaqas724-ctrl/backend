@@ -5,7 +5,6 @@ from django.conf import settings   # for AUTH_USER_MODEL
 from Merchants_App.models import Merchant, Outlet, Coupon
 
 
-# Loyalty_App/models.py
 class Transaction(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
@@ -34,6 +33,7 @@ class Transaction(models.Model):
     )
     points = models.IntegerField()
     created_at = models.DateTimeField(auto_now_add=True)
+
     class Meta:
         db_table = 'transactions'
         verbose_name = 'Transaction'
@@ -43,4 +43,3 @@ class Transaction(models.Model):
     def __str__(self):
         action = "Redeem" if self.points < 0 else "Add"
         return f"{action} {abs(self.points)} pts - {self.user.email} @ {self.merchant.company_name}"
-
