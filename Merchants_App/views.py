@@ -649,6 +649,7 @@ class MerchantScanQRAPIView(APIView):
         except ValueError:
             return Response({'error': 'Points must be an integer.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Validate QR code
         if not qr_code or not qr_code.startswith("user:"):
             return Response({'error': 'Invalid QR code format.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -664,9 +665,10 @@ class MerchantScanQRAPIView(APIView):
         wallet.total_points += points
         wallet.save()
 
-        # Get merchant profile
-        merchant_account = user.merchants.first()
-        if not merchant_account:
+        # Safely get the merchant profile for the logged-in merchant user
+        try:
+            merchant_account = Merchant.objects.get(user=user)
+        except Merchant.DoesNotExist:
             return Response({'error': 'Merchant profile not found.'}, status=status.HTTP_400_BAD_REQUEST)
 
         # Optional: get outlet or coupon
