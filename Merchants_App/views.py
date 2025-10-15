@@ -636,26 +636,28 @@ class MerchantScanQRAPIView(APIView):
 
     def post(self, request):
         user = request.user
-        if user.role != 'merchant':
+
+        # Only merchants can scan QR codes
+        if user.role != User.MERCHANT:
             return Response({'error': 'Only merchants can scan QR codes.'},
                             status=status.HTTP_403_FORBIDDEN)
 
         qr_code = request.data.get('qr_code')
         points = request.data.get('points', 10)
 
-        # Validate points as integer
+        # Validate points
         try:
             points = int(points)
-        except ValueError:
+        except (ValueError, TypeError):
             return Response({'error': 'Points must be an integer.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Validate QR code
+        # Validate QR code format
         if not qr_code or not qr_code.startswith("user:"):
             return Response({'error': 'Invalid QR code format.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Extract customer ID from QR code
+        # Extract customer ID
         customer_id = qr_code.split("user:")[1]
-        customer = get_object_or_404(User, id=customer_id, role='customer')
+        customer = get_object_or_404(User, id=customer_id, role=User.CUSTOMER)
 
         # Record the QR scan
         QRScan.objects.create(customer=customer, qr_code=qr_code, points_awarded=points)
@@ -665,20 +667,19 @@ class MerchantScanQRAPIView(APIView):
         wallet.total_points += points
         wallet.save()
 
-        # Safely get the merchant profile for the logged-in merchant user
-        try:
-            merchant_account = Merchant.objects.get(user=user)
-        except Merchant.DoesNotExist:
+        # Get merchant profile linked to logged-in user
+        merchant_account = Merchant.objects.filter(user=user).first()
+        if not merchant_account:
             return Response({'error': 'Merchant profile not found.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Optional: get outlet or coupon
+        # Optional: outlet and coupon
         outlet = None
         if 'outlet_id' in request.data:
-            outlet = get_object_or_404(Outlet, id=request.data['outlet_id'])
+            outlet = get_object_or_404(Outlet, id=request.data['outlet_id'], merchant=merchant_account)
 
         coupon = None
         if 'coupon_id' in request.data:
-            coupon = get_object_or_404(Coupon, id=request.data['coupon_id'])
+            coupon = get_object_or_404(Coupon, id=request.data['coupon_id'], merchant=merchant_account)
 
         # Record the transaction
         transaction = Transaction.objects.create(
