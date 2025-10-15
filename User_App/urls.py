@@ -12,6 +12,7 @@ from .views import (
 ########################################################################################
 from .views import UserProfileUpdateView
 from .views import QRScanAPIView  #=======> new update====>
+from .views import MyQRAPIView  #=======> new update====>
 ################################################################################################################
 urlpatterns = [
     path('register/', UserRegistrationView.as_view(), name='register'),
@@ -28,5 +29,6 @@ urlpatterns = [
     path('qr/scan/', QRScanAPIView.as_view(), name='qr-scan'),   ###+> new updated
 ]
 ###############################################################################################
+
 
 
