@@ -692,4 +692,3 @@ class MerchantScanQRAPIView(APIView):
             'total_points': wallet.total_points,
             'transaction_id': str(transaction.id)
         }, status=status.HTTP_200_OK)
-
