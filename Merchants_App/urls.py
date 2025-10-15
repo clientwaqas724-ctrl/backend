@@ -7,6 +7,8 @@ from .views import RedeemCouponView
 from .views import CustomerCouponsView  # add this import at the top new updated
 ##########################################################################################
 from .views import MerchantDashboardAnalyticsView #######Full new
+from .views import MerchantScanQRAPIView #######Full new
+##################################################################
 router = DefaultRouter()
 router.register(r'merchants',MerchantViewSet)
 router.register(r'outlets',OutletViewSet)   # NEW
@@ -25,7 +27,9 @@ urlpatterns = [
     ##new Updated====>
     path('customer/coupons/', CustomerCouponsView.as_view(), name='customer-coupons'),  # ✅ NEW
     path('merchant/dashboard/',MerchantDashboardAnalyticsView.as_view(), name='merchant-dashboard'),
+    path('merchant/scan-qr/', MerchantScanQRAPIView.as_view(), name='merchant_scan_qr'),
 ]
+
 
 
 
