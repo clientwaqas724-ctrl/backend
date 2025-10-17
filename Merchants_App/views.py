@@ -638,53 +638,60 @@ class MerchantScanQRAPIView(APIView):
     POST /api/merchant/scan-qr/
     Body: { "qr_code": "user:<uuid>", "points": 10 }
     Only merchant users can call this.
-    Creates Transaction + logs UserActivity.
+    Every scan (even same QR) awards points again.
     """
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
         user = request.user
-        qr_code = request.data.get("qr_code")
-        points = int(request.data.get("points", 0))
 
-        if getattr(user, "role", None) != "merchant":
-            return Response({
-                "success": False,
-                "message": "Only merchant users can scan QR codes."
-            }, status=status.HTTP_403_FORBIDDEN)
+        # ✅ Only merchant users can scan
+        if user.role != 'merchant':
+            return Response(
+                {'error': 'Only merchants can scan QR codes.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
-        if not qr_code or not qr_code.startswith("user:"):
-            return Response({"success": False, "message": "Invalid QR code format."},
-                            status=status.HTTP_400_BAD_REQUEST)
+        qr_code = request.data.get('qr_code')
+        points = int(request.data.get('points', 10))  # default = 10 points
 
-        target_user_uuid = qr_code.split("user:")[-1]
-        target_user = get_object_or_404(User, id=target_user_uuid)
-        merchant = get_object_or_404(Merchant, user=user)
+        # ✅ Parse QR and get the customer
+        try:
+            customer_id = qr_code.split(":")[1]
+            customer = User.objects.get(id=customer_id, role='customer')
+        except Exception:
+            return Response(
+                {'error': 'Invalid QR code.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-        transaction = Transaction.objects.create(
-            user=target_user,
-            merchant=merchant,
+        # ✅ Record each scan — even if same QR code scanned again
+        QRScan.objects.create(customer=customer, qr_code=qr_code, points_awarded=points)
+
+        # ✅ Update or create CustomerPoints wallet
+        wallet, _ = CustomerPoints.objects.get_or_create(customer=customer)
+        wallet.total_points += points
+        wallet.save()
+
+        # ✅ Ensure merchant profile exists
+        merchant_account, created = Merchant.objects.get_or_create(
+            user=user,
+            defaults={'company_name': f"{user.name}'s Company"}
+        )
+
+        # ✅ Record transaction for this scan
+        Transaction.objects.create(
+            user=customer,
+            merchant=merchant_account,
+            outlet=None,
             points=points
         )
 
-        user_points, _ = UserPoints.objects.get_or_create(user=target_user)
-        user_points.points += points
-        user_points.save()
-
-        UserActivity.objects.create(
-            user=target_user,
-            activity_type="earn_points",
-            description=f"Earned {points} points at {merchant.company_name}",
-            points_changed=points
+        # ✅ Return success message
+        return Response(
+            {
+                'message': f'{points} points awarded to {customer.email}',
+                'total_points': wallet.total_points
+            },
+            status=status.HTTP_200_OK
         )
-
-        return Response({
-            "success": True,
-            "message": f"{points} points added to {target_user.email}.",
-            "data": {
-                "transaction_id": str(transaction.id),
-                "user": str(target_user.id),
-                "merchant": str(merchant.id),
-                "points_awarded": points
-            }
-        }, status=status.HTTP_201_CREATED)
