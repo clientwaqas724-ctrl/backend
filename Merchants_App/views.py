@@ -278,12 +278,14 @@ class UserActivityViewSet(viewsets.ModelViewSet):
 ################################################################################################################################################################
 ##############################################################################################################################################
 ##############################################################################################################################################
+##############################################################################################################################################
+##############################################################################################################################################
 class CustomerHomeViewSet(viewsets.ViewSet):
     """
     Provides:
       • GET /customer/home/
-    Returns the customer dashboard data including:
-      - user details (points, tier)
+    Returns:
+      - user details (total points from Transaction)
       - promotions
       - available coupons
       - recent activity
@@ -294,45 +296,55 @@ class CustomerHomeViewSet(viewsets.ViewSet):
         user = request.user
         today = timezone.now().date()
 
-        # ✅ 1️⃣ Get total points directly from Transaction model
-        total_points = Transaction.objects.filter(user=user).aggregate(
-            total=Sum('points')
-        )['total'] or 0
+        # ✅ 1️⃣ Calculate total points from Transaction model directly
+        total_points = (
+            Transaction.objects.filter(user=user)
+            .aggregate(total=Sum('points'))
+            .get('total') or 0
+        )
 
-        # ✅ 2️⃣ Get tier (if you still have tier logic via UserPoints)
-        try:
-            user_points = UserPoints.objects.select_related('tier', 'user').get(user=user)
-            current_tier = user_points.tier
-        except UserPoints.DoesNotExist:
-            current_tier = None
+        # ✅ 2️⃣ Get user’s tier (optional, safe)
+        user_points = UserPoints.objects.filter(user=user).select_related('tier').first()
+        tier = user_points.tier if user_points and hasattr(user_points, 'tier') else None
 
-        # ✅ 3️⃣ Active promotions
+        # ✅ 3️⃣ Active promotions and coupons
         promotions = Promotion.objects.filter(start_date__lte=today, end_date__gte=today)
-
-        # ✅ 4️⃣ Active coupons
         coupons = Coupon.objects.filter(status=Coupon.STATUS_ACTIVE)
 
-        # ✅ 5️⃣ Recent user activities (limit 5)
+        # ✅ 4️⃣ Recent activities (limit 5)
         activities = UserActivity.objects.filter(user=user).order_by('-activity_date')[:5]
 
-        # ✅ 6️⃣ Serialize data (reuse existing serializer)
+        # ✅ 5️⃣ Serialize dashboard
         serializer = CustomerHomeSerializer({
             "user": {
-                "user": user,
-                "tier": current_tier,
+                "id": str(user.id),
+                "email": user.email,
+                "name": user.name,
                 "total_points": total_points,
+                "tier": tier.name if tier else None
             },
             "promotions": promotions,
             "available_coupons": coupons,
             "recent_activity": activities
         })
 
-        # ✅ 7️⃣ Final response
+        # ✅ 6️⃣ Return final response
         return Response({
             "success": True,
             "message": "Dashboard data retrieved successfully",
-            "data": serializer.data
-        })
+            "data": {
+                "user": {
+                    "id": str(user.id),
+                    "email": user.email,
+                    "name": user.name,
+                    "total_points": total_points,
+                    "tier": tier.name if tier else None,
+                },
+                "promotions": serializer.data.get("promotions", []),
+                "available_coupons": serializer.data.get("available_coupons", []),
+                "recent_activity": serializer.data.get("recent_activity", []),
+            },
+        }, status=status.HTTP_200_OK)
 ##############################################################################################################################################
 ##############################################################################################################################################
 # ============================= Redeem Coupon API =============================
@@ -692,6 +704,7 @@ class MerchantScanQRAPIView(APIView):
             'message': f'{points} points awarded to {customer.email}',
             'total_points': wallet.total_points
         }, status=status.HTTP_200_OK)
+
 
 
 
