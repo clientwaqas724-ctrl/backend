@@ -630,7 +630,6 @@ class MerchantScanQRAPIView(APIView):
     """
     POST /api/merchant/scan-qr/
     Body: { "qr_code": "user:<uuid>", "points": 10 }
-    Allows multiple scans and adds points every time.
     Only merchant users can call this.
     """
     permission_classes = [IsAuthenticated]
@@ -638,61 +637,53 @@ class MerchantScanQRAPIView(APIView):
     def post(self, request):
         user = request.user
 
-        # ✅ Ensure user is a merchant
+        # Ensure only merchant can access
         if user.role != 'merchant':
             return Response({'error': 'Only merchants can scan QR codes.'},
                             status=status.HTTP_403_FORBIDDEN)
 
         qr_code = request.data.get('qr_code')
-        points = int(request.data.get('points', 10))  # Default 10 points if not provided
+        points = int(request.data.get('points', 10))  # default points = 10
 
-        if not qr_code or not qr_code.startswith("user:"):
-            return Response({'error': 'Invalid QR code format.'},
-                            status=status.HTTP_400_BAD_REQUEST)
-
-        # ✅ Extract customer safely
+        # Parse QR and get the customer
         try:
             customer_id = qr_code.split(":")[1]
             customer = User.objects.get(id=customer_id, role='customer')
-        except User.DoesNotExist:
-            return Response({'error': 'Customer not found for this QR code.'},
-                            status=status.HTTP_404_NOT_FOUND)
         except Exception:
-            return Response({'error': 'Invalid QR code.'},
-                            status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'Invalid QR code.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # ✅ Use atomic block to ensure safe DB operations
-        with transaction.atomic():
-            # Record every QR scan (no duplication restriction)
-            QRScan.objects.create(
-                customer=customer,
-                qr_code=qr_code,
-                points_awarded=points,
-                scanned_by=user,
-                scanned_at=timezone.now()
-            )
+        # ✅ Check for duplicate scan (if already scanned, don't award again)
+        if QRScan.objects.filter(customer=customer, qr_code=qr_code).exists():
+            wallet = CustomerPoints.objects.filter(customer=customer).first()
+            total_points = wallet.total_points if wallet else 0
+            return Response({
+                'message': 'QR already scanned, no points awarded again.',
+                'total_points': total_points
+            }, status=status.HTTP_200_OK)
 
-            # Update or create customer wallet
-            wallet, _ = CustomerPoints.objects.get_or_create(customer=customer)
-            wallet.total_points = wallet.total_points + points
-            wallet.save()
+        # ✅ Record new QR scan
+        QRScan.objects.create(customer=customer, qr_code=qr_code, points_awarded=points)
 
-            # Ensure merchant profile exists
-            merchant_account, _ = Merchant.objects.get_or_create(
-                user=user,
-                defaults={'company_name': f"{user.username}'s Company"}
-            )
+        # ✅ Update or create CustomerPoints wallet
+        wallet, _ = CustomerPoints.objects.get_or_create(customer=customer)
+        wallet.total_points += points
+        wallet.save()
 
-            # Record transaction
-            Transaction.objects.create(
-                user=customer,
-                merchant=merchant_account,
-                outlet=None,
-                points=points,
-                transaction_date=timezone.now()
-            )
+        # ✅ Ensure merchant profile exists
+        merchant_account, created = Merchant.objects.get_or_create(
+            user=user,
+            defaults={'company_name': f"{user.name}'s Company"}
+        )
 
-        # ✅ Return updated total points
+        # ✅ Record the transaction
+        Transaction.objects.create(
+            user=customer,
+            merchant=merchant_account,
+            outlet=None,
+            points=points
+        )
+
+        # ✅ Response with success
         return Response({
             'message': f'{points} points awarded to {customer.email}',
             'total_points': wallet.total_points
