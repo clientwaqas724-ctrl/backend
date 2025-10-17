@@ -292,11 +292,19 @@ class CustomerHomeViewSet(viewsets.ViewSet):
         user = request.user
         today = timezone.now().date()
 
-        # 1️⃣ Get user points
+        # 1️⃣ Get total points from CustomerPoints or fallback to UserPoints
+        from User_App.models import CustomerPoints
+
         try:
-            user_points = UserPoints.objects.select_related('tier', 'user').get(user=user)
-        except UserPoints.DoesNotExist:
-            user_points = UserPoints(user=user, total_points=0)
+            customer_wallet = CustomerPoints.objects.get(customer=user)
+            total_points = customer_wallet.total_points
+        except CustomerPoints.DoesNotExist:
+            # fallback to UserPoints if no wallet found
+            try:
+                user_points = UserPoints.objects.get(user=user)
+                total_points = user_points.total_points
+            except UserPoints.DoesNotExist:
+                total_points = 0
 
         # 2️⃣ Active promotions
         promotions = Promotion.objects.filter(start_date__lte=today, end_date__gte=today)
@@ -307,9 +315,14 @@ class CustomerHomeViewSet(viewsets.ViewSet):
         # 4️⃣ Recent user activities (limit 5)
         activities = UserActivity.objects.filter(user=user).order_by('-activity_date')[:5]
 
-        # 5️⃣ Serialize data
+        # 5️⃣ Combine response
         serializer = CustomerHomeSerializer({
-            "user": user_points,
+            "user": {
+                "id": str(user.id),
+                "email": user.email,
+                "name": user.name,
+                "total_points": total_points
+            },
             "promotions": promotions,
             "available_coupons": coupons,
             "recent_activity": activities
@@ -680,3 +693,4 @@ class MerchantScanQRAPIView(APIView):
             'message': f'{points} points awarded to {customer.email}',
             'total_points': wallet.total_points
         }, status=status.HTTP_200_OK)
+
