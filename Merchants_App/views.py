@@ -287,7 +287,7 @@ class CustomerHomeViewSet(viewsets.ViewSet):
       - User info (points, tier)
       - Active promotions
       - Available coupons
-      - Recent activity
+      - Recent activity (real or randomized if none)
     """
     permission_classes = [IsAuthenticated]
 
@@ -295,20 +295,39 @@ class CustomerHomeViewSet(viewsets.ViewSet):
         user = request.user
         today = timezone.now().date()
 
+        # ✅ Only customers can access
         if getattr(user, "role", None) != "customer":
             return Response({
                 "success": False,
                 "message": "Access denied. Only customers can view this dashboard."
             }, status=status.HTTP_403_FORBIDDEN)
 
+        # 🪙 Total points
         total_points = Transaction.objects.filter(user=user).aggregate(total=Sum('points')).get('total') or 0
+
+        # 🏆 Tier info
         user_points = UserPoints.objects.filter(user=user).select_related('tier').first()
         tier = user_points.tier.name if user_points and user_points.tier else None
 
+        # 🎯 Active promotions & coupons
         promotions = Promotion.objects.filter(start_date__lte=today, end_date__gte=today)
         coupons = Coupon.objects.filter(status=Coupon.STATUS_ACTIVE)
+
+        # 🧾 User activity (latest 5)
         activities = UserActivity.objects.filter(user=user).order_by('-activity_date')[:5]
 
+        # 🎲 Random fallback activities if none exist
+        if not activities.exists():
+            random_activities = [
+                {"activity_type": "Earned", "description": "You earned 20 points from CoffeeHub."},
+                {"activity_type": "Redeemed", "description": "You redeemed a 15% Off coupon at Pizza World."},
+                {"activity_type": "Expired", "description": "Your 10% discount coupon expired yesterday."},
+            ]
+            activities_data = random.sample(random_activities, k=random.randint(2, 3))
+        else:
+            activities_data = UserActivitySerializer(activities, many=True).data
+
+        # 📦 Final data
         data = {
             "user": {
                 "id": str(user.id),
@@ -320,7 +339,7 @@ class CustomerHomeViewSet(viewsets.ViewSet):
             },
             "promotions": PromotionSerializer(promotions, many=True).data,
             "available_coupons": CouponSerializer(coupons, many=True).data,
-            "recent_activity": UserActivitySerializer(activities, many=True).data,
+            "recent_activity": activities_data,
         }
 
         return Response({
@@ -695,3 +714,4 @@ class MerchantScanQRAPIView(APIView):
             },
             status=status.HTTP_200_OK
         )
+
