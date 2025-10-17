@@ -634,37 +634,50 @@ class MerchantScanQRAPIView(APIView):
     """
     permission_classes = [IsAuthenticated]
 
+    @transaction.atomic
     def post(self, request):
         user = request.user
+
+        # ✅ Only merchant users allowed
         if user.role != 'merchant':
             return Response({'error': 'Only merchants can scan QR codes.'},
                             status=status.HTTP_403_FORBIDDEN)
 
         qr_code = request.data.get('qr_code')
-        points = int(request.data.get('points', 10))  # default = 10 points
+        points = int(request.data.get('points', 10))
 
-        # Parse QR and get the customer
+        # ✅ Validate QR code format
+        if not qr_code or not qr_code.startswith('user:'):
+            return Response({'error': 'Invalid QR code format.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
         try:
             customer_id = qr_code.split(":")[1]
             customer = User.objects.get(id=customer_id, role='customer')
-        except Exception:
-            return Response({'error': 'Invalid QR code.'}, status=status.HTTP_400_BAD_REQUEST)
+        except User.DoesNotExist:
+            return Response({'error': 'Invalid or unknown customer QR code.'},
+                            status=status.HTTP_400_BAD_REQUEST)
 
-        # Record the QR scan
+        # ✅ Prevent duplicate scans
+        if QRScan.objects.filter(qr_code=qr_code).exists():
+            return Response({'error': 'This QR code has already been scanned.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # ✅ Record the scan
         QRScan.objects.create(customer=customer, qr_code=qr_code, points_awarded=points)
 
-        # Update or create CustomerPoints wallet
-        wallet, _ = CustomerPoints.objects.get_or_create(customer=customer)
-        wallet.total_points += points
+        # ✅ Safely update wallet (refresh before save)
+        wallet, _ = CustomerPoints.objects.select_for_update().get_or_create(customer=customer)
+        wallet.total_points = wallet.total_points + points
         wallet.save()
 
-        # Ensure merchant profile exists
-        merchant_account, created = Merchant.objects.get_or_create(
+        # ✅ Ensure merchant exists
+        merchant_account, _ = Merchant.objects.get_or_create(
             user=user,
-            defaults={'company_name': f"{user.name}'s Company"}
+            defaults={'company_name': f"{user.username}'s Company"}
         )
 
-        # Record the transaction
+        # ✅ Record the transaction
         Transaction.objects.create(
             user=customer,
             merchant=merchant_account,
