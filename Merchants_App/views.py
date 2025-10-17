@@ -630,6 +630,7 @@ class MerchantScanQRAPIView(APIView):
     """
     POST /api/merchant/scan-qr/
     Body: { "qr_code": "user:<uuid>", "points": 10 }
+    Allows multiple scans and adds points every time.
     Only merchant users can call this.
     """
     permission_classes = [IsAuthenticated]
@@ -637,19 +638,19 @@ class MerchantScanQRAPIView(APIView):
     def post(self, request):
         user = request.user
 
-        # ✅ Step 1: Verify merchant role
+        # ✅ Ensure user is a merchant
         if user.role != 'merchant':
             return Response({'error': 'Only merchants can scan QR codes.'},
                             status=status.HTTP_403_FORBIDDEN)
 
         qr_code = request.data.get('qr_code')
-        points = int(request.data.get('points', 10))
+        points = int(request.data.get('points', 10))  # Default 10 points if not provided
 
         if not qr_code or not qr_code.startswith("user:"):
             return Response({'error': 'Invalid QR code format.'},
                             status=status.HTTP_400_BAD_REQUEST)
 
-        # ✅ Step 2: Extract customer ID safely
+        # ✅ Extract customer safely
         try:
             customer_id = qr_code.split(":")[1]
             customer = User.objects.get(id=customer_id, role='customer')
@@ -660,15 +661,9 @@ class MerchantScanQRAPIView(APIView):
             return Response({'error': 'Invalid QR code.'},
                             status=status.HTTP_400_BAD_REQUEST)
 
-        # ✅ Step 3: Optional - prevent reusing same QR code
-        # Comment this block if multiple scans with same QR are allowed
-        if QRScan.objects.filter(qr_code=qr_code, customer=customer).exists():
-            return Response({'error': 'QR code already scanned for this customer.'},
-                            status=status.HTTP_400_BAD_REQUEST)
-
-        # ✅ Step 4: Use atomic transaction to ensure data consistency
+        # ✅ Use atomic block to ensure safe DB operations
         with transaction.atomic():
-            # Record QR Scan
+            # Record every QR scan (no duplication restriction)
             QRScan.objects.create(
                 customer=customer,
                 qr_code=qr_code,
@@ -677,7 +672,7 @@ class MerchantScanQRAPIView(APIView):
                 scanned_at=timezone.now()
             )
 
-            # Update customer wallet (add points)
+            # Update or create customer wallet
             wallet, _ = CustomerPoints.objects.get_or_create(customer=customer)
             wallet.total_points = wallet.total_points + points
             wallet.save()
@@ -688,7 +683,7 @@ class MerchantScanQRAPIView(APIView):
                 defaults={'company_name': f"{user.username}'s Company"}
             )
 
-            # Log transaction
+            # Record transaction
             Transaction.objects.create(
                 user=customer,
                 merchant=merchant_account,
@@ -697,7 +692,7 @@ class MerchantScanQRAPIView(APIView):
                 transaction_date=timezone.now()
             )
 
-        # ✅ Step 5: Return response
+        # ✅ Return updated total points
         return Response({
             'message': f'{points} points awarded to {customer.email}',
             'total_points': wallet.total_points
