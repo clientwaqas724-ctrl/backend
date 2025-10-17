@@ -280,50 +280,54 @@ class UserActivityViewSet(viewsets.ModelViewSet):
 ##############################################################################################################################################
 ##############################################################################################################################################
 ##############################################################################################################################################
-class CustomerHomeAPIView(APIView):
+class CustomerHomeViewSet(viewsets.ViewSet):
     """
-    GET /api/customer/home/
-    Returns user's points, tier, promotions, coupons, and recent activity.
+    GET /api/merchants/customer/home/
+    Returns dashboard data for a customer user:
+      - User info (points, tier)
+      - Active promotions
+      - Available coupons
+      - Recent activity
     """
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
+    def list(self, request, *args, **kwargs):
         user = request.user
-
-        # 1️⃣ Get or create user points
-        user_points, _ = UserPoints.objects.get_or_create(user=user)
-
-        # 2️⃣ Active promotions (you can add date filters if needed)
-        promotions = Promotion.objects.all().order_by('-created_at')[:5]
-
-        # 3️⃣ Active coupons (not expired)
         today = timezone.now().date()
-        available_coupons = Coupon.objects.filter(
-            status=Coupon.STATUS_ACTIVE,
-            expiry_date__gte=today
-        ).order_by('-created_at')[:5]
 
-        # 4️⃣ Redeemed coupons (based on user activity)
-        redeemed_activities = UserActivity.objects.filter(
-            user=user,
-            activity_type='redeem_coupon'
-        ).select_related('related_coupon').order_by('-activity_date')
+        if getattr(user, "role", None) != "customer":
+            return Response({
+                "success": False,
+                "message": "Access denied. Only customers can view this dashboard."
+            }, status=status.HTTP_403_FORBIDDEN)
 
-        redeemed_coupons = RedeemedCouponSerializer(redeemed_activities, many=True).data
+        total_points = Transaction.objects.filter(user=user).aggregate(total=Sum('points')).get('total') or 0
+        user_points = UserPoints.objects.filter(user=user).select_related('tier').first()
+        tier = user_points.tier.name if user_points and user_points.tier else None
 
-        # 5️⃣ Recent activity (last 10 actions)
-        recent_activity = UserActivity.objects.filter(user=user).order_by('-activity_date')[:10]
+        promotions = Promotion.objects.filter(start_date__lte=today, end_date__gte=today)
+        coupons = Coupon.objects.filter(status=Coupon.STATUS_ACTIVE)
+        activities = UserActivity.objects.filter(user=user).order_by('-activity_date')[:5]
 
-        # 6️⃣ Serialize everything
         data = {
-            "user_points": UserPointsSerializer(user_points).data,
+            "user": {
+                "id": str(user.id),
+                "email": getattr(user, "email", None),
+                "name": getattr(user, "name", None),
+                "role": getattr(user, "role", None),
+                "total_points": total_points,
+                "tier": tier,
+            },
             "promotions": PromotionSerializer(promotions, many=True).data,
-            "available_coupons": CouponSerializer(available_coupons, many=True).data,
-            "redeemed_coupons": redeemed_coupons,
-            "recent_activity": UserActivitySerializer(recent_activity, many=True).data,
+            "available_coupons": CouponSerializer(coupons, many=True).data,
+            "recent_activity": UserActivitySerializer(activities, many=True).data,
         }
 
-        return Response(data, status=status.HTTP_200_OK)
+        return Response({
+            "success": True,
+            "message": "Dashboard data retrieved successfully",
+            "data": data
+        }, status=status.HTTP_200_OK)
 ##############################################################################################################################################
 ##############################################################################################################################################
 # ============================= Redeem Coupon API =============================
@@ -634,59 +638,53 @@ class MerchantScanQRAPIView(APIView):
     POST /api/merchant/scan-qr/
     Body: { "qr_code": "user:<uuid>", "points": 10 }
     Only merchant users can call this.
-    Every scan (even same QR) awards points again.
+    Creates Transaction + logs UserActivity.
     """
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
         user = request.user
+        qr_code = request.data.get("qr_code")
+        points = int(request.data.get("points", 0))
 
-        # ✅ Only merchant users can scan
-        if user.role != 'merchant':
-            return Response({'error': 'Only merchants can scan QR codes.'},
-                            status=status.HTTP_403_FORBIDDEN)
+        if getattr(user, "role", None) != "merchant":
+            return Response({
+                "success": False,
+                "message": "Only merchant users can scan QR codes."
+            }, status=status.HTTP_403_FORBIDDEN)
 
-        qr_code = request.data.get('qr_code')
-        points = int(request.data.get('points', 10))  # default = 10 points
+        if not qr_code or not qr_code.startswith("user:"):
+            return Response({"success": False, "message": "Invalid QR code format."},
+                            status=status.HTTP_400_BAD_REQUEST)
 
-        # ✅ Parse QR and get the customer
-        try:
-            customer_id = qr_code.split(":")[1]
-            customer = User.objects.get(id=customer_id, role='customer')
-        except Exception:
-            return Response({'error': 'Invalid QR code.'}, status=status.HTTP_400_BAD_REQUEST)
+        target_user_uuid = qr_code.split("user:")[-1]
+        target_user = get_object_or_404(User, id=target_user_uuid)
+        merchant = get_object_or_404(Merchant, user=user)
 
-        # ✅ Record each scan — even if same QR code scanned again
-        QRScan.objects.create(customer=customer, qr_code=qr_code, points_awarded=points)
-
-        # ✅ Update or create CustomerPoints wallet
-        wallet, _ = CustomerPoints.objects.get_or_create(customer=customer)
-        wallet.total_points += points
-        wallet.save()
-
-        # ✅ Ensure merchant profile exists
-        merchant_account, created = Merchant.objects.get_or_create(
-            user=user,
-            defaults={'company_name': f"{user.name}'s Company"}
-        )
-
-        # ✅ Record transaction for this scan
-        Transaction.objects.create(
-            user=customer,
-            merchant=merchant_account,
-            outlet=None,
+        transaction = Transaction.objects.create(
+            user=target_user,
+            merchant=merchant,
             points=points
         )
 
-        # ✅ Return success message
+        user_points, _ = UserPoints.objects.get_or_create(user=target_user)
+        user_points.points += points
+        user_points.save()
+
+        UserActivity.objects.create(
+            user=target_user,
+            activity_type="earn_points",
+            description=f"Earned {points} points at {merchant.company_name}",
+            points_changed=points
+        )
+
         return Response({
-            'message': f'{points} points awarded to {customer.email}',
-            'total_points': wallet.total_points
-        }, status=status.HTTP_200_OK)
-
-
-
-
-
-
-
+            "success": True,
+            "message": f"{points} points added to {target_user.email}.",
+            "data": {
+                "transaction_id": str(transaction.id),
+                "user": str(target_user.id),
+                "merchant": str(merchant.id),
+                "points_awarded": points
+            }
+        }, status=status.HTTP_201_CREATED)
