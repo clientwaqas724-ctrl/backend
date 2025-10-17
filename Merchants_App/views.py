@@ -276,6 +276,8 @@ class UserActivityViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 ################################################################################################################################################################
 ################################################################################################################################################################
+##############################################################################################################################################
+##############################################################################################################################################
 class CustomerHomeViewSet(viewsets.ViewSet):
     """
     Provides:
@@ -292,61 +294,40 @@ class CustomerHomeViewSet(viewsets.ViewSet):
         user = request.user
         today = timezone.now().date()
 
-        # ✅ 1️⃣ Get total points from CustomerPoints (QR scan points)
+        # ✅ 1️⃣ Get total points directly from Transaction model
+        total_points = Transaction.objects.filter(user=user).aggregate(
+            total=Sum('points')
+        )['total'] or 0
+
+        # ✅ 2️⃣ Get tier (if you still have tier logic via UserPoints)
         try:
-            customer_wallet = CustomerPoints.objects.get(customer=user)
-            total_points = customer_wallet.total_points
-
-            # ✅ Keep UserPoints in sync
-            user_points, created = UserPoints.objects.get_or_create(
-                user=user,
-                defaults={"total_points": total_points}
-            )
-            if not created and user_points.total_points != total_points:
-                user_points.total_points = total_points
-                user_points.save()
-
-        except CustomerPoints.DoesNotExist:
-            # fallback to UserPoints if CustomerPoints not found
-            try:
-                user_points = UserPoints.objects.get(user=user)
-                total_points = user_points.total_points
-            except UserPoints.DoesNotExist:
-                total_points = 0
-                # create both empty records for consistency
-                CustomerPoints.objects.create(customer=user, total_points=0)
-                UserPoints.objects.create(user=user, total_points=0)
-
-        # ✅ 2️⃣ Ensure UserPoints object exists and is synced
-        user_points_obj, _ = UserPoints.objects.get_or_create(
-            user=user,
-            defaults={"total_points": total_points}
-        )
-        if user_points_obj.total_points != total_points:
-            user_points_obj.total_points = total_points
-            user_points_obj.save()
+            user_points = UserPoints.objects.select_related('tier', 'user').get(user=user)
+            current_tier = user_points.tier
+        except UserPoints.DoesNotExist:
+            current_tier = None
 
         # ✅ 3️⃣ Active promotions
-        promotions = Promotion.objects.filter(
-            start_date__lte=today,
-            end_date__gte=today
-        )
+        promotions = Promotion.objects.filter(start_date__lte=today, end_date__gte=today)
 
         # ✅ 4️⃣ Active coupons
         coupons = Coupon.objects.filter(status=Coupon.STATUS_ACTIVE)
 
-        # ✅ 5️⃣ Recent user activities
+        # ✅ 5️⃣ Recent user activities (limit 5)
         activities = UserActivity.objects.filter(user=user).order_by('-activity_date')[:5]
 
-        # ✅ 6️⃣ Combine response — DO NOT CHANGE EXISTING STRUCTURE
+        # ✅ 6️⃣ Serialize data (reuse existing serializer)
         serializer = CustomerHomeSerializer({
-            "user": user_points_obj,  # points info for dashboard
+            "user": {
+                "user": user,
+                "tier": current_tier,
+                "total_points": total_points,
+            },
             "promotions": promotions,
             "available_coupons": coupons,
             "recent_activity": activities
         })
 
-        # ✅ 7️⃣ Return unchanged dashboard structure
+        # ✅ 7️⃣ Final response
         return Response({
             "success": True,
             "message": "Dashboard data retrieved successfully",
@@ -711,6 +692,7 @@ class MerchantScanQRAPIView(APIView):
             'message': f'{points} points awarded to {customer.email}',
             'total_points': wallet.total_points
         }, status=status.HTTP_200_OK)
+
 
 
 
