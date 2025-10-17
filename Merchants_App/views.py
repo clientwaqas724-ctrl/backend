@@ -280,69 +280,50 @@ class UserActivityViewSet(viewsets.ModelViewSet):
 ##############################################################################################################################################
 ##############################################################################################################################################
 ##############################################################################################################################################
-class CustomerHomeViewSet(viewsets.ViewSet):
+class CustomerHomeAPIView(APIView):
     """
-    GET /api/merchants/customer/home/
-    Returns dashboard data for a customer user:
-      - User info (with total points)
-      - Active promotions
-      - Available coupons
-      - Recent activity
+    GET /api/customer/home/
+    Returns user's points, tier, promotions, coupons, and recent activity.
     """
     permission_classes = [IsAuthenticated]
 
-    def list(self, request, *args, **kwargs):
+    def get(self, request):
         user = request.user
+
+        # 1️⃣ Get or create user points
+        user_points, _ = UserPoints.objects.get_or_create(user=user)
+
+        # 2️⃣ Active promotions (you can add date filters if needed)
+        promotions = Promotion.objects.all().order_by('-created_at')[:5]
+
+        # 3️⃣ Active coupons (not expired)
         today = timezone.now().date()
+        available_coupons = Coupon.objects.filter(
+            status=Coupon.STATUS_ACTIVE,
+            expiry_date__gte=today
+        ).order_by('-created_at')[:5]
 
-        # ✅ Only allow customers
-        if getattr(user, "role", None) != "customer":
-            return Response({
-                "success": False,
-                "message": "Access denied. Only customers can view this dashboard."
-            }, status=status.HTTP_403_FORBIDDEN)
+        # 4️⃣ Redeemed coupons (based on user activity)
+        redeemed_activities = UserActivity.objects.filter(
+            user=user,
+            activity_type='redeem_coupon'
+        ).select_related('related_coupon').order_by('-activity_date')
 
-        # ✅ Get all transactions for this customer's email
-        total_points = (
-            Transaction.objects.filter(user__email=user.email)
-            .aggregate(total=Sum('points'))
-            .get('total') or 0
-        )
+        redeemed_coupons = RedeemedCouponSerializer(redeemed_activities, many=True).data
 
-        # ✅ Get tier (if any)
-        user_points = UserPoints.objects.filter(user=user).select_related('tier').first()
-        tier = user_points.tier.name if user_points and user_points.tier else None
+        # 5️⃣ Recent activity (last 10 actions)
+        recent_activity = UserActivity.objects.filter(user=user).order_by('-activity_date')[:10]
 
-        # ✅ Fetch active promotions, coupons, recent activities
-        promotions = Promotion.objects.filter(start_date__lte=today, end_date__gte=today)
-        coupons = Coupon.objects.filter(status=Coupon.STATUS_ACTIVE)
-        activities = UserActivity.objects.filter(user=user).order_by('-activity_date')[:5]
-
-        # ✅ Serialize
-        promotion_data = PromotionSerializer(promotions, many=True).data
-        coupon_data = CouponSerializer(coupons, many=True).data
-        activity_data = UserActivitySerializer(activities, many=True).data
-
-        # ✅ Build final response
+        # 6️⃣ Serialize everything
         data = {
-            "user": {
-                "id": str(user.id),
-                "email": getattr(user, "email", None),
-                "name": getattr(user, "name", None),
-                "role": getattr(user, "role", None),
-                "total_points": total_points,
-                "tier": tier,
-            },
-            "promotions": promotion_data,
-            "available_coupons": coupon_data,
-            "recent_activity": activity_data,
+            "user_points": UserPointsSerializer(user_points).data,
+            "promotions": PromotionSerializer(promotions, many=True).data,
+            "available_coupons": CouponSerializer(available_coupons, many=True).data,
+            "redeemed_coupons": redeemed_coupons,
+            "recent_activity": UserActivitySerializer(recent_activity, many=True).data,
         }
 
-        return Response({
-            "success": True,
-            "message": "Dashboard data retrieved successfully",
-            "data": data
-        }, status=status.HTTP_200_OK)
+        return Response(data, status=status.HTTP_200_OK)
 ##############################################################################################################################################
 ##############################################################################################################################################
 # ============================= Redeem Coupon API =============================
@@ -702,6 +683,7 @@ class MerchantScanQRAPIView(APIView):
             'message': f'{points} points awarded to {customer.email}',
             'total_points': wallet.total_points
         }, status=status.HTTP_200_OK)
+
 
 
 
