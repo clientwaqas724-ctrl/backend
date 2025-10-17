@@ -631,37 +631,29 @@ class MerchantScanQRAPIView(APIView):
     POST /api/merchant/scan-qr/
     Body: { "qr_code": "user:<uuid>", "points": 10 }
     Only merchant users can call this.
+    Every scan (even same QR) awards points again.
     """
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
         user = request.user
 
-        # Ensure only merchant can access
+        # ✅ Only merchant users can scan
         if user.role != 'merchant':
             return Response({'error': 'Only merchants can scan QR codes.'},
                             status=status.HTTP_403_FORBIDDEN)
 
         qr_code = request.data.get('qr_code')
-        points = int(request.data.get('points', 10))  # default points = 10
+        points = int(request.data.get('points', 10))  # default = 10 points
 
-        # Parse QR and get the customer
+        # ✅ Parse QR and get the customer
         try:
             customer_id = qr_code.split(":")[1]
             customer = User.objects.get(id=customer_id, role='customer')
         except Exception:
             return Response({'error': 'Invalid QR code.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # ✅ Check for duplicate scan (if already scanned, don't award again)
-        if QRScan.objects.filter(customer=customer, qr_code=qr_code).exists():
-            wallet = CustomerPoints.objects.filter(customer=customer).first()
-            total_points = wallet.total_points if wallet else 0
-            return Response({
-                'message': 'QR already scanned, no points awarded again.',
-                'total_points': total_points
-            }, status=status.HTTP_200_OK)
-
-        # ✅ Record new QR scan
+        # ✅ Record each scan — even if same QR code scanned again
         QRScan.objects.create(customer=customer, qr_code=qr_code, points_awarded=points)
 
         # ✅ Update or create CustomerPoints wallet
@@ -675,7 +667,7 @@ class MerchantScanQRAPIView(APIView):
             defaults={'company_name': f"{user.name}'s Company"}
         )
 
-        # ✅ Record the transaction
+        # ✅ Record transaction for this scan
         Transaction.objects.create(
             user=customer,
             merchant=merchant_account,
@@ -683,7 +675,7 @@ class MerchantScanQRAPIView(APIView):
             points=points
         )
 
-        # ✅ Response with success
+        # ✅ Return success message
         return Response({
             'message': f'{points} points awarded to {customer.email}',
             'total_points': wallet.total_points
