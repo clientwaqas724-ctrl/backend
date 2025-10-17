@@ -292,43 +292,61 @@ class CustomerHomeViewSet(viewsets.ViewSet):
         user = request.user
         today = timezone.now().date()
 
-        # 1️⃣ Get total points from CustomerPoints or fallback to UserPoints
-        from User_App.models import CustomerPoints
-
+        # ✅ 1️⃣ Get total points from CustomerPoints (QR scan points)
         try:
+            # This is where QR scan points are stored
             customer_wallet = CustomerPoints.objects.get(customer=user)
             total_points = customer_wallet.total_points
+            
+            # ✅ Also update UserPoints to keep both in sync
+            user_points, created = UserPoints.objects.get_or_create(
+                user=user, 
+                defaults={"total_points": total_points}
+            )
+            if not created and user_points.total_points != total_points:
+                user_points.total_points = total_points
+                user_points.save()
+                
         except CustomerPoints.DoesNotExist:
-            # fallback to UserPoints if no wallet found
+            # If no CustomerPoints record exists, fallback to UserPoints
             try:
                 user_points = UserPoints.objects.get(user=user)
                 total_points = user_points.total_points
             except UserPoints.DoesNotExist:
                 total_points = 0
+                # Create both records if neither exists
+                CustomerPoints.objects.create(customer=user, total_points=0)
+                UserPoints.objects.create(user=user, total_points=0)
 
-        # 2️⃣ Active promotions
+        # ✅ 2️⃣ Get or create UserPoints record for serialization
+        user_points_obj, _ = UserPoints.objects.get_or_create(
+            user=user,
+            defaults={"total_points": total_points}
+        )
+        
+        # Ensure UserPoints has the correct total
+        if user_points_obj.total_points != total_points:
+            user_points_obj.total_points = total_points
+            user_points_obj.save()
+
+        # ✅ 3️⃣ Active promotions
         promotions = Promotion.objects.filter(start_date__lte=today, end_date__gte=today)
 
-        # 3️⃣ Active coupons
+        # ✅ 4️⃣ Active coupons
         coupons = Coupon.objects.filter(status=Coupon.STATUS_ACTIVE)
 
-        # 4️⃣ Recent user activities (limit 5)
+        # ✅ 5️⃣ Recent user activities (limit 5)
         activities = UserActivity.objects.filter(user=user).order_by('-activity_date')[:5]
 
-        # 5️⃣ Combine response
+        # ✅ 6️⃣ Combine response
         serializer = CustomerHomeSerializer({
-            "user": {
-                "id": str(user.id),
-                "email": user.email,
-                "name": user.name,
-                "total_points": total_points
-            },
+            "user": user_points_obj,  # Use the UserPoints object for serialization
             "promotions": promotions,
             "available_coupons": coupons,
             "recent_activity": activities
         })
 
-        # 6️⃣ Final response
+        # ✅ 7️⃣ Final response
         return Response({
             "success": True,
             "message": "Dashboard data retrieved successfully",
@@ -693,4 +711,5 @@ class MerchantScanQRAPIView(APIView):
             'message': f'{points} points awarded to {customer.email}',
             'total_points': wallet.total_points
         }, status=status.HTTP_200_OK)
+
 
