@@ -634,11 +634,10 @@ class MerchantScanQRAPIView(APIView):
     """
     permission_classes = [IsAuthenticated]
 
-    @transaction.atomic
     def post(self, request):
         user = request.user
 
-        # ✅ Only merchant users allowed
+        # ✅ Step 1: Verify merchant role
         if user.role != 'merchant':
             return Response({'error': 'Only merchants can scan QR codes.'},
                             status=status.HTTP_403_FORBIDDEN)
@@ -646,45 +645,59 @@ class MerchantScanQRAPIView(APIView):
         qr_code = request.data.get('qr_code')
         points = int(request.data.get('points', 10))
 
-        # ✅ Validate QR code format
-        if not qr_code or not qr_code.startswith('user:'):
+        if not qr_code or not qr_code.startswith("user:"):
             return Response({'error': 'Invalid QR code format.'},
                             status=status.HTTP_400_BAD_REQUEST)
 
+        # ✅ Step 2: Extract customer ID safely
         try:
             customer_id = qr_code.split(":")[1]
             customer = User.objects.get(id=customer_id, role='customer')
         except User.DoesNotExist:
-            return Response({'error': 'Invalid or unknown customer QR code.'},
+            return Response({'error': 'Customer not found for this QR code.'},
+                            status=status.HTTP_404_NOT_FOUND)
+        except Exception:
+            return Response({'error': 'Invalid QR code.'},
                             status=status.HTTP_400_BAD_REQUEST)
 
-        # ✅ Prevent duplicate scans
-        if QRScan.objects.filter(qr_code=qr_code).exists():
-            return Response({'error': 'This QR code has already been scanned.'},
+        # ✅ Step 3: Optional - prevent reusing same QR code
+        # Comment this block if multiple scans with same QR are allowed
+        if QRScan.objects.filter(qr_code=qr_code, customer=customer).exists():
+            return Response({'error': 'QR code already scanned for this customer.'},
                             status=status.HTTP_400_BAD_REQUEST)
 
-        # ✅ Record the scan
-        QRScan.objects.create(customer=customer, qr_code=qr_code, points_awarded=points)
+        # ✅ Step 4: Use atomic transaction to ensure data consistency
+        with transaction.atomic():
+            # Record QR Scan
+            QRScan.objects.create(
+                customer=customer,
+                qr_code=qr_code,
+                points_awarded=points,
+                scanned_by=user,
+                scanned_at=timezone.now()
+            )
 
-        # ✅ Safely update wallet (refresh before save)
-        wallet, _ = CustomerPoints.objects.select_for_update().get_or_create(customer=customer)
-        wallet.total_points = wallet.total_points + points
-        wallet.save()
+            # Update customer wallet (add points)
+            wallet, _ = CustomerPoints.objects.get_or_create(customer=customer)
+            wallet.total_points = wallet.total_points + points
+            wallet.save()
 
-        # ✅ Ensure merchant exists
-        merchant_account, _ = Merchant.objects.get_or_create(
-            user=user,
-            defaults={'company_name': f"{user.username}'s Company"}
-        )
+            # Ensure merchant profile exists
+            merchant_account, _ = Merchant.objects.get_or_create(
+                user=user,
+                defaults={'company_name': f"{user.username}'s Company"}
+            )
 
-        # ✅ Record the transaction
-        Transaction.objects.create(
-            user=customer,
-            merchant=merchant_account,
-            outlet=None,
-            points=points
-        )
+            # Log transaction
+            Transaction.objects.create(
+                user=customer,
+                merchant=merchant_account,
+                outlet=None,
+                points=points,
+                transaction_date=timezone.now()
+            )
 
+        # ✅ Step 5: Return response
         return Response({
             'message': f'{points} points awarded to {customer.email}',
             'total_points': wallet.total_points
