@@ -377,8 +377,8 @@ class CustomerHomeViewSet(viewsets.ViewSet):
 class RedeemCouponView(APIView):
     """
     POST /api/redeem-coupon/
-    Allows a user to redeem a coupon using their available points.
-    Prevents duplicate redemption of the same coupon by the same user.
+    Allows a user to redeem a coupon using their available points and total transaction history.
+    Prevents duplicate redemption and accurately deducts from total combined balance.
     """
     permission_classes = [IsAuthenticated]
 
@@ -409,44 +409,76 @@ class RedeemCouponView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # ✅ 4. Prevent same user from redeeming same coupon twice
-        already_redeemed = Transaction.objects.filter(
-            user=user, coupon=coupon, points__lt=0
-        ).exists()
-        if already_redeemed:
-            return Response(
-                {
-                    "success": False,
-                    "message": "You have already redeemed this coupon."
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # ✅ 5. Get user's total points
+        # ✅ 4. Get user's current points record
         user_points, _ = UserPoints.objects.get_or_create(
             user=user, defaults={"total_points": 0}
         )
 
-        available_points = user_points.total_points  # Use directly — no double counting
+        # ✅ 5. Calculate total earned/redeemed from Transaction model
+        total_earned = (
+            Transaction.objects.filter(user=user, points__gt=0)
+            .aggregate(total=Sum("points"))
+            .get("total") or 0
+        )
+        total_redeemed = (
+            Transaction.objects.filter(user=user, points__lt=0)
+            .aggregate(total=Sum("points"))
+            .get("total") or 0
+        )
+        transaction_net_points = total_earned + total_redeemed  # redeemed negative
 
-        # ✅ 6. Check if enough points
-        if available_points < coupon.points_required:
+        # ✅ 6. Combined available points before redemption
+        total_available_points = user_points.total_points + transaction_net_points
+
+        # ✅ 7. Check if coupon already redeemed
+        already_redeemed = Transaction.objects.filter(
+            user=user,
+            coupon=coupon,
+            points__lt=0
+        ).exists()
+
+        if already_redeemed:
+            return Response(
+                {
+                    "success": False,
+                    "message": f"You have already redeemed this coupon: {coupon.title}",
+                    "data": {
+                        "coupon": {"id": str(coupon.id), "title": coupon.title},
+                        "remaining_points": total_available_points,
+                    },
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # ✅ 8. Check if user has enough total points
+        if total_available_points < coupon.points_required:
             return Response(
                 {
                     "success": False,
                     "message": (
                         f"Not enough points. You need {coupon.points_required}, "
-                        f"but you only have {available_points}."
+                        f"but you only have {total_available_points}."
                     ),
+                    "data": {"remaining_points": total_available_points},
                 },
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # ✅ 7. Deduct points safely
-        user_points.total_points -= coupon.points_required
+        # ✅ 9. Deduct coupon points from total (combined) balance
+        remaining_points = total_available_points - coupon.points_required
+
+        # Update UserPoints to reflect new correct total
+        user_points.total_points = remaining_points
         user_points.save(update_fields=["total_points"])
 
-        # ✅ 8. Log in both UserActivity and Transaction
+        # ✅ 10. Log redemption in both tables
+        Transaction.objects.create(
+            user=user,
+            merchant=coupon.merchant,
+            coupon=coupon,
+            points=-coupon.points_required
+        )
+
         UserActivity.objects.create(
             user=user,
             activity_type="redeem_coupon",
@@ -455,21 +487,14 @@ class RedeemCouponView(APIView):
             related_coupon=coupon
         )
 
-        Transaction.objects.create(
-            user=user,
-            merchant=coupon.merchant,
-            coupon=coupon,
-            points=-coupon.points_required
-        )
-
-        # ✅ 9. Return success response
+        # ✅ 11. Response
         return Response(
             {
                 "success": True,
                 "message": "Coupon redeemed successfully!",
                 "data": {
                     "coupon": {"id": str(coupon.id), "title": coupon.title},
-                    "remaining_points": user_points.total_points,
+                    "remaining_points": remaining_points,
                 },
             },
             status=status.HTTP_200_OK
@@ -766,6 +791,7 @@ class MerchantScanQRAPIView(APIView):
             },
             status=status.HTTP_200_OK
         )
+
 
 
 
