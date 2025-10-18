@@ -1,8 +1,9 @@
+# Loyalty_App/serializers.py
 from rest_framework import serializers
 from .models import Transaction
 from Merchants_App.models import Outlet, Coupon
-#########################################################################################################################################################
-#############################################################################################################################################################
+
+
 class TransactionSerializer(serializers.ModelSerializer):
     # Read-only user & merchant info
     user_name = serializers.CharField(source='user.name', read_only=True)
@@ -29,19 +30,17 @@ class TransactionSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'created_at']
 
-    ###################################################################################################
-    # CREATE / UPDATE — Auto-assign outlet or coupon if missing
-    ###################################################################################################
+    # ===========================================================
+    # CREATE / UPDATE — Auto-fill missing outlet/coupon
+    # ===========================================================
     def create(self, validated_data):
         merchant = validated_data.get('merchant')
 
-        # Auto-assign an outlet if not provided
         if not validated_data.get('outlet') and merchant:
             outlet = Outlet.objects.filter(merchant=merchant).order_by('created_at').last()
             if outlet:
                 validated_data['outlet'] = outlet
 
-        # Auto-assign an active coupon if not provided
         if not validated_data.get('coupon') and merchant:
             coupon = Coupon.objects.filter(
                 merchant=merchant,
@@ -55,13 +54,11 @@ class TransactionSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         merchant = validated_data.get('merchant', instance.merchant)
 
-        # Auto-assign outlet if not already set
         if not validated_data.get('outlet') and not instance.outlet:
             outlet = Outlet.objects.filter(merchant=merchant).order_by('created_at').last()
             if outlet:
                 validated_data['outlet'] = outlet
 
-        # Auto-assign coupon if not already set
         if not validated_data.get('coupon') and not instance.coupon:
             coupon = Coupon.objects.filter(
                 merchant=merchant,
@@ -72,14 +69,10 @@ class TransactionSerializer(serializers.ModelSerializer):
 
         return super().update(instance, validated_data)
 
-    ###################################################################################################
-    # DISPLAY HELPERS — Fallbacks for outlet and coupon display
-    ###################################################################################################
+    # ===========================================================
+    # DISPLAY HELPERS — Safe fallbacks for outlet/coupon display
+    # ===========================================================
     def get_outlet(self, obj):
-        """
-        Return the outlet name.
-        If missing in the transaction, fall back to the first available outlet.
-        """
         try:
             if obj.outlet:
                 return obj.outlet.name
@@ -89,10 +82,6 @@ class TransactionSerializer(serializers.ModelSerializer):
             return None
 
     def get_coupon(self, obj):
-        """
-        Return the coupon title.
-        If missing in the transaction, fall back to the first available coupon.
-        """
         try:
             if obj.coupon:
                 return obj.coupon.title
