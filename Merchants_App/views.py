@@ -308,9 +308,8 @@ class CustomerHomeViewSet(viewsets.ViewSet):
         tier = user_points.tier.name if user_points and user_points.tier else None
 
         # --- PROMOTIONS & COUPONS ---
-        promotions = Promotion.objects.filter(start_date__lte=today, end_date__gte=today)
+        promotions = Promotion.objects.all()  # ✅ all promotions directly
         coupons = Coupon.objects.filter(status=Coupon.STATUS_ACTIVE)
-
         # --- RECENT ACTIVITY ---
         activities = UserActivity.objects.filter(user=user).order_by('-activity_date')[:5]
 
@@ -791,6 +790,7 @@ class MerchantScanQRAPIView(APIView):
             },
             status=status.HTTP_200_OK
         )
+
 
 
 
