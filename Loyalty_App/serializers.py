@@ -1,7 +1,7 @@
 # Loyalty_App/serializers.py
 from rest_framework import serializers
 from .models import Transaction
-from Merchants_App.models import Outlet, Coupon
+from Merchants_App.models import Outlet, Coupon, UserActivity
 
 
 class TransactionSerializer(serializers.ModelSerializer):
@@ -13,6 +13,9 @@ class TransactionSerializer(serializers.ModelSerializer):
     # Outlet & Coupon display helpers
     outlet = serializers.SerializerMethodField()
     coupon = serializers.SerializerMethodField()
+
+    # ✅ New field: Show whether points were awarded or coupon redeemed
+    user_activity_type = serializers.SerializerMethodField()
 
     class Meta:
         model = Transaction
@@ -26,6 +29,7 @@ class TransactionSerializer(serializers.ModelSerializer):
             'outlet',
             'coupon',
             'points',
+            'user_activity_type',
             'created_at',
         ]
         read_only_fields = ['id', 'created_at']
@@ -70,7 +74,7 @@ class TransactionSerializer(serializers.ModelSerializer):
         return super().update(instance, validated_data)
 
     # ===========================================================
-    # DISPLAY HELPERS — Safe fallbacks for outlet/coupon display
+    # DISPLAY HELPERS
     # ===========================================================
     def get_outlet(self, obj):
         try:
@@ -89,3 +93,15 @@ class TransactionSerializer(serializers.ModelSerializer):
             return first_coupon.title if first_coupon else None
         except Exception:
             return None
+
+    # ===========================================================
+    # ✅ USER ACTIVITY TYPE CHECKER
+    # ===========================================================
+    def get_user_activity_type(self, obj):
+        """
+        If points < 0 → Coupon redeemed
+        If points > 0 → Points Awarded
+        """
+        if obj.points < 0:
+            return "Coupon redeemed"
+        return "Points Awarded"
