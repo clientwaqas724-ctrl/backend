@@ -374,11 +374,11 @@ class CustomerHomeViewSet(viewsets.ViewSet):
         }, status=status.HTTP_200_OK)
 ##############################################################################################################################################
 ##############################################################################################################################################
-# ============================= Redeem Coupon API =============================
 class RedeemCouponView(APIView):
     """
     POST /api/redeem-coupon/
-    Allows a user to redeem a coupon using their available points and total transaction history.
+    Allows a user to redeem a coupon using their available points.
+    Prevents duplicate redemption of the same coupon by the same user.
     """
     permission_classes = [IsAuthenticated]
 
@@ -409,46 +409,44 @@ class RedeemCouponView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # ✅ 4. Get UserPoints safely
-        user_points, created = UserPoints.objects.get_or_create(
+        # ✅ 4. Prevent same user from redeeming same coupon twice
+        already_redeemed = Transaction.objects.filter(
+            user=user, coupon=coupon, points__lt=0
+        ).exists()
+        if already_redeemed:
+            return Response(
+                {
+                    "success": False,
+                    "message": "You have already redeemed this coupon."
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # ✅ 5. Get user's total points
+        user_points, _ = UserPoints.objects.get_or_create(
             user=user, defaults={"total_points": 0}
         )
 
-        # ✅ 5. Calculate transaction totals
-        total_earned = (
-            Transaction.objects.filter(user=user, points__gt=0)
-            .aggregate(total=Sum("points"))
-            .get("total") or 0
-        )
-        total_redeemed = (
-            Transaction.objects.filter(user=user, points__lt=0)
-            .aggregate(total=Sum("points"))
-            .get("total") or 0
-        )
-        net_transaction_points = total_earned + total_redeemed  # redeemed are negative
+        available_points = user_points.total_points  # Use directly — no double counting
 
-        # ✅ 6. Compute combined available points
-        combined_total_points = user_points.total_points + net_transaction_points
-
-        # ✅ 7. Check if enough points
-        if combined_total_points < coupon.points_required:
+        # ✅ 6. Check if enough points
+        if available_points < coupon.points_required:
             return Response(
                 {
                     "success": False,
                     "message": (
                         f"Not enough points. You need {coupon.points_required}, "
-                        f"but you only have {combined_total_points}."
+                        f"but you only have {available_points}."
                     ),
                 },
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # ✅ 8. Deduct from UserPoints safely (never go below zero)
-        new_total = max(user_points.total_points - coupon.points_required, 0)
-        user_points.total_points = new_total
+        # ✅ 7. Deduct points safely
+        user_points.total_points -= coupon.points_required
         user_points.save(update_fields=["total_points"])
 
-        # ✅ 9. Log in both UserActivity and Transaction
+        # ✅ 8. Log in both UserActivity and Transaction
         UserActivity.objects.create(
             user=user,
             activity_type="redeem_coupon",
@@ -464,14 +462,14 @@ class RedeemCouponView(APIView):
             points=-coupon.points_required
         )
 
-        # ✅ 10. Return response
+        # ✅ 9. Return success response
         return Response(
             {
                 "success": True,
                 "message": "Coupon redeemed successfully!",
                 "data": {
                     "coupon": {"id": str(coupon.id), "title": coupon.title},
-                    "remaining_points": combined_total_points - coupon.points_required,
+                    "remaining_points": user_points.total_points,
                 },
             },
             status=status.HTTP_200_OK
@@ -768,6 +766,7 @@ class MerchantScanQRAPIView(APIView):
             },
             status=status.HTTP_200_OK
         )
+
 
 
 
