@@ -37,6 +37,8 @@ import uuid   # ✅ added for unique QR generation
 from Merchants_App.models import Merchant, Outlet, Coupon, UserActivity, UserPoints
 from datetime import date, timedelta
 from django.db.models import Count, Sum
+###############################################################################
+from django.shortcuts import render, redirect ###---->new updated
 ################################################################################################################################################################
 class UserRegistrationView(APIView):
     permission_classes = [AllowAny]
@@ -307,6 +309,9 @@ class MyQRAPIView(APIView):
             'qr_text': qr_data['qr_text'],   # "user:<uuid>"
             'qr_image': qr_data['qr_image']  # base64 image for display
         }, status=status.HTTP_200_OK)
+##########################################################################################
+def My_Home(request):
+    return render(request,"index.html")
 
 
 
