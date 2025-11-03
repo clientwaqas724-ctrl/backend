@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LoyaltyHub Admin Dashboard</title>
+
+<!-- Fonts & Icons -->
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+<style>
+/* ----------------- Body & Background ----------------- */
+body {
+    margin: 0;
+    font-family: 'Orbitron', sans-serif;
+    background: radial-gradient(circle at 30% 30%, #0f0c29, #302b63, #24243e);
+    color: #00ffea;
+    overflow-x: hidden;
+}
+
+/* ----------------- Page Header ----------------- */
+header {
+    text-align: center;
+    margin: 40px 0 20px;
+}
+header h1 {
+    font-size: 3rem;
+    text-shadow: 0 0 10px #00ffea, 0 0 20px #00ffea;
+}
+header p {
+    font-size: 1.2rem;
+    color: #00ffe0aa;
+}
+
+/* ----------------- Navigation ----------------- */
+nav {
+    display: flex;
+    justify-content: center;
+    margin: 30px 0;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.nav-btn {
+    background: rgba(0,255,234,0.1);
+    border: 1px solid rgba(0,255,234,0.3);
+    color: #00ffea;
+    padding: 12px 25px;
+    border-radius: 8px;
+    font-family: 'Orbitron', sans-serif;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-size: 1rem;
+}
+
+.nav-btn:hover {
+    background: rgba(0,255,234,0.2);
+    box-shadow: 0 0 15px #00ffea55;
+    transform: translateY(-3px);
+}
+
+.nav-btn.active {
+    background: rgba(0,255,234,0.3);
+    box-shadow: 0 0 15px #00ffea;
+}
+
+/* ----------------- Dashboard Grid ----------------- */
+.dashboard {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 25px;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.dashboard-card {
+    background: rgba(0,255,234,0.05);
+    border: 1px solid rgba(0,255,234,0.2);
+    border-radius: 15px;
+    padding: 25px;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    opacity: 0;
+    animation: fadeIn 1s ease forwards;
+}
+
+.dashboard-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 25px rgba(0,255,234,0.1);
+}
+
+.dashboard-card h3 {
+    margin-top: 0;
+    color: #00ffd5;
+    font-size: 1.5rem;
+    border-bottom: 1px solid rgba(0,255,234,0.3);
+    padding-bottom: 10px;
+}
+
+.card-icon {
+    font-size: 2.5rem;
+    margin-bottom: 15px;
+    color: #00ffea;
+}
+
+.card-value {
+    font-size: 2.8rem;
+    margin: 15px 0;
+    text-shadow: 0 0 10px #00ffea;
+}
+
+.card-label {
+    color: #00ffe0aa;
+    font-size: 1rem;
+}
+
+/* ----------------- Stats Section ----------------- */
+.stats {
+    display: flex;
+    justify-content: center;
+    gap: 50px;
+    margin-top: 50px;
+    flex-wrap: wrap;
+}
+
+.stat {
+    text-align: center;
+    font-size: 2.5rem;
+    text-shadow: 0 0 10px #00ffea, 0 0 20px #00ffea;
+    animation: fadeIn 2s ease forwards;
+    opacity: 0;
+}
+
+.stat p {
+    font-size: 1.2rem;
+    color: #00ffe0aa;
+    margin-top: 5px;
+}
+
+/* ----------------- Activity Feed ----------------- */
+.activity-feed {
+    max-width: 1200px;
+    margin: 50px auto;
+    padding: 0 20px;
+}
+
+.activity-feed h2 {
+    text-align: center;
+    font-size: 2.2rem;
+    margin-bottom: 30px;
+    color: #00ffd5;
+    text-shadow: 0 0 10px #00ffd5;
+}
+
+.activity-list {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.activity-item {
+    background: rgba(0,255,234,0.05);
+    border: 1px solid rgba(0,255,234,0.2);
+    border-radius: 10px;
+    padding: 15px 20px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    transition: all 0.3s ease;
+}
+
+.activity-item:hover {
+    background: rgba(0,255,234,0.1);
+    transform: translateX(5px);
+}
+
+.activity-icon {
+    font-size: 1.5rem;
+    color: #00ffea;
+}
+
+.activity-content {
+    flex: 1;
+}
+
+.activity-title {
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+.activity-time {
+    color: #00ffe0aa;
+    font-size: 0.9rem;
+}
+
+/* ----------------- Animations ----------------- */
+@keyframes fadeIn {
+    0% { opacity: 0; transform: translateY(20px); }
+    100% { opacity: 1; transform: translateY(0); }
+}
+
+/* ----------------- Responsive ----------------- */
+@media (max-width: 768px) {
+    header h1 {
+        font-size: 2.2rem;
+    }
+    
+    .dashboard {
+        grid-template-columns: 1fr;
+    }
+    
+    .stats {
+        gap: 30px;
+    }
+    
+    .stat {
+        font-size: 2rem;
+    }
+}
+</style>
+</head>
+<body>
+
+<header>
+    <h1>LoyaltyHub Admin Dashboard</h1>
+    <p>Customer Loyalty Platform • Admin Panel</p>
+</header>
+
+<!-- Navigation -->
+<nav>
+    <button class="nav-btn active">Dashboard</button>
+    <button class="nav-btn">Merchants</button>
+    <button class="nav-btn">Coupons</button>
+    <button class="nav-btn">Promotions</button>
+    <button class="nav-btn">Outlets</button>
+    <button class="nav-btn">Customers</button>
+    <button class="nav-btn">Analytics</button>
+</nav>
+
+<!-- Dashboard Grid -->
+<div class="dashboard">
+    <div class="dashboard-card" style="animation-delay: 0.1s;">
+        <div class="card-icon"><i class="fas fa-store"></i></div>
+        <h3>Merchants</h3>
+        <div class="card-value" data-target="42">0</div>
+        <div class="card-label">Active Merchants</div>
+    </div>
+    
+    <div class="dashboard-card" style="animation-delay: 0.2s;">
+        <div class="card-icon"><i class="fas fa-users"></i></div>
+        <h3>Customers</h3>
+        <div class="card-value" data-target="30">0</div>
+        <div class="card-label">Registered Users</div>
+    </div>
+    
+    <div class="dashboard-card" style="animation-delay: 0.3s;">
+        <div class="card-icon"><i class="fas fa-ticket-alt"></i></div>
+        <h3>Coupons</h3>
+        <div class="card-value" data-target="86">0</div>
+        <div class="card-label">Active Coupons</div>
+    </div>
+    
+    <div class="dashboard-card" style="animation-delay: 0.4s;">
+        <div class="card-icon"><i class="fas fa-map-marker-alt"></i></div>
+        <h3>Outlets</h3>
+        <div class="card-value" data-target="100">0</div>
+        <div class="card-label">Merchant Locations</div>
+    </div>
+    
+    <div class="dashboard-card" style="animation-delay: 0.5s;">
+        <div class="card-icon"><i class="fas fa-qrcode"></i></div>
+        <h3>Scans Today</h3>
+        <div class="card-value" data-target="100">0</div>
+        <div class="card-label">QR Code Scans</div>
+    </div>
+    
+    <div class="dashboard-card" style="animation-delay: 0.6s;">
+        <div class="card-icon"><i class="fas fa-chart-line"></i></div>
+        <h3>Points Redeemed</h3>
+        <div class="card-value" data-target="100">0</div>
+        <div class="card-label">This Month</div>
+    </div>
+</div>
+
+<!-- Stats Section -->
+<div class="stats">
+    <div class="stat" style="animation-delay: 0.7s;">
+        <div class="counter" data-target="100">0</div>
+        <p>Total Customers</p>
+    </div>
+    <div class="stat" style="animation-delay: 0.8s;">
+        <div class="counter" data-target="42">0</div>
+        <p>Active Merchants</p>
+    </div>
+    <div class="stat" style="animation-delay: 0.9s;">
+        <div class="counter" data-target="18">0</div>
+        <p>Merchant Outlets</p>
+    </div>
+</div>
+
+<!-- Activity Feed -->
+<div class="activity-feed">
+    <h2>Recent Activity</h2>
+    <div class="activity-list">
+        <div class="activity-item">
+            <div class="activity-icon"><i class="fas fa-store"></i></div>
+            <div class="activity-content">
+                <div class="activity-title">New Merchant Added</div>
+                <div class="activity-desc">"TechGadgets" joined the platform</div>
+                <div class="activity-time">10 minutes ago</div>
+            </div>
+        </div>
+        
+        <div class="activity-item">
+            <div class="activity-icon"><i class="fas fa-ticket-alt"></i></div>
+            <div class="activity-content">
+                <div class="activity-title">Coupon Redeemed</div>
+                <div class="activity-desc">Customer redeemed "20% Off Electronics"</div>
+                <div class="activity-time">25 minutes ago</div>
+            </div>
+        </div>
+        
+        <div class="activity-item">
+            <div class="activity-icon"><i class="fas fa-qrcode"></i></div>
+            <div class="activity-content">
+                <div class="activity-title">QR Code Scanned</div>
+                <div class="activity-desc">At "Coffee Corner" downtown outlet</div>
+                <div class="activity-time">1 hour ago</div>
+            </div>
+        </div>
+        
+        <div class="activity-item">
+            <div class="activity-icon"><i class="fas fa-user-plus"></i></div>
+            <div class="activity-content">
+                <div class="activity-title">New Customer Registration</div>
+                <div class="activity-desc">Sarah Johnson joined the loyalty program</div>
+                <div class="activity-time">2 hours ago</div>
+            </div>
+        </div>
+        
+        <div class="activity-item">
+            <div class="activity-icon"><i class="fas fa-bullhorn"></i></div>
+            <div class="activity-content">
+                <div class="activity-title">Promotion Created</div>
+                <div class="activity-desc">"Double Points Weekend" by FashionHub</div>
+                <div class="activity-time">3 hours ago</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Counter JS -->
+<script>
+// Counter animation
+const counters = document.querySelectorAll('.counter, .card-value');
+const animationSpeed = 200;
+
+const animateCounter = (counter) => {
+    const target = +counter.getAttribute('data-target');
+    const count = +counter.innerText.replace(/,/g, '');
+    const increment = target / animationSpeed;
+    
+    if(count < target){
+        counter.innerText = Math.ceil(count + increment).toLocaleString();
+        setTimeout(() => animateCounter(counter), 10);
+    } else {
+        counter.innerText = target.toLocaleString();
+    }
+};
+
+// Navigation button functionality
+const navButtons = document.querySelectorAll('.nav-btn');
+navButtons.forEach(button => {
+    button.addEventListener('click', function() {
+        navButtons.forEach(btn => btn.classList.remove('active'));
+        this.classList.add('active');
+    });
+});
+
+// Initialize counters when page loads
+window.addEventListener('load', () => {
+    counters.forEach(counter => {
+        counter.innerText = '0';
+        animateCounter(counter);
+    });
+});
+</script>
+
+</body>
+</html>
