@@ -1,4 +1,8 @@
 from django.urls import path
+###############################################################################################
+from rest_framework.routers import DefaultRouter  #######New Now Updated
+from django.urls import path, include  #######New Now Updated
+##################################################################################
 from .views import (
     UserRegistrationView,
     UserLoginView,
@@ -7,8 +11,16 @@ from .views import (
     ForgotPasswordView,
     ResetPasswordView,
     ChangePasswordView,
-    UserSearchView
+    UserSearchView,
+    ############################################################
+    AboutViewSet,   ####new updated
+    MessageStreamViewSet  ########new updated
+#####################################################################
 )
+#####################################################################
+router = DefaultRouter()   ####new updated
+router.register(r'about', AboutViewSet, basename='about') ####new updated
+router.register(r'message-stream', MessageStreamViewSet, basename='message-stream') ####new updated
 ########################################################################################
 from .views import UserProfileUpdateView
 from .views import QRScanAPIView  #=======> new update====>
@@ -31,6 +43,7 @@ urlpatterns = [
 
 ]
 ###############################################################################################
+
 
 
 
