@@ -24,6 +24,8 @@ from .serializers import(
 from .models import User
 from .serializers import QRScanSerializer  #########-> new api
 from .serializers import MyQRSerializer   #########-> last new Updated
+######################################################################################
+############################################################################################################################
 ##############################################################################################################################################################
 ###############################################################################################################################################################
 def get_tokens_for_user(user):
@@ -77,13 +79,52 @@ class UserLoginView(APIView):
         if serializer.is_valid():
             user = serializer.validated_data['user']
             token = get_tokens_for_user(user)
-            # ✅ Generate a temporary unique ID for QR generation
+
+            # ✅ Generate unique QR ID
             unique_qr_id = str(uuid.uuid4())
-            # ✅ Build absolute image URL if available
-            image_path = (
-                request.build_absolute_uri(user.profile_image)
-                if user.profile_image else None
+
+            # ✅ Build absolute profile image URL if available
+            profile_image_url = (
+                request.build_absolute_uri(user.profile_image.url)
+                if getattr(user, 'profile_image', None) and hasattr(user.profile_image, 'url')
+                else None
             )
+
+            outlet_details = []
+
+            # ✅ If user is a merchant, attach their outlets
+            if user.role == User.MERCHANT:
+                try:
+                    merchant = Merchant.objects.get(user=user)
+                    outlets = Outlet.objects.filter(merchant=merchant)
+
+                    for outlet in outlets:
+                        # ✅ Determine which image to use
+                        if outlet.outlet_image:
+                            outlet_image_url = request.build_absolute_uri(outlet.outlet_image.url)
+                        elif outlet.outlet_image_url:
+                            outlet_image_url = outlet.outlet_image_url
+                        else:
+                            outlet_image_url = None
+
+                        outlet_details.append({
+                            'id': str(outlet.id),
+                            'name': outlet.name,
+                            'address': outlet.address,
+                            'city': outlet.city,
+                            'state': outlet.state,
+                            'country': outlet.country,
+                            'latitude': outlet.latitude,
+                            'longitude': outlet.longitude,
+                            'contact_number': outlet.contact_number,
+                            'outlet_image': outlet_image_url,  # ✅ always return one URL here
+                            'created_at': outlet.created_at,
+                            'updated_at': outlet.updated_at,
+                        })
+                except Merchant.DoesNotExist:
+                    outlet_details = []
+
+            # ✅ Build final response
             return Response({
                 'token': token,
                 'message': 'Login Successful',
@@ -93,10 +134,12 @@ class UserLoginView(APIView):
                     'name': user.name,
                     'role': user.role,
                     'phone': user.phone,
-                    'profile_image': image_path,
-                    'unique_qr_id': unique_qr_id,  # ✅ Added unique temporary ID
+                    'profile_image': profile_image_url,
+                    'unique_qr_id': unique_qr_id,
+                    'outlet_details': outlet_details,
                 }
             }, status=status.HTTP_200_OK)
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 ###########################################################################################################################################################
 #############################################################################################################################################################
@@ -312,6 +355,7 @@ class MyQRAPIView(APIView):
 ##########################################################################################
 def My_Home(request):
     return render(request,"index.html")
+
 
 
 
