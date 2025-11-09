@@ -2,6 +2,10 @@
 import uuid
 from django.db import models
 from django.conf import settings   # to reference the custom User model
+########################################################################
+##########New Updated#########################################
+from django.core.validators import URLValidator
+from django.core.exceptions import ValidationError
 #######################################################################################################################################################
 ########################################################################################################################################################
 class Merchant(models.Model):
@@ -47,7 +51,7 @@ class Outlet(models.Model):
 
     # Link each outlet to a merchant
     merchant = models.ForeignKey(
-        Merchant,
+        'Merchant',
         on_delete=models.CASCADE,
         related_name='outlets'
     )
@@ -61,6 +65,22 @@ class Outlet(models.Model):
     longitude = models.DecimalField(max_digits=11, decimal_places=8, null=True, blank=True)
     contact_number = models.CharField(max_length=20, blank=True)
 
+    # ✅ New optional outlet image field
+    outlet_image = models.ImageField(
+        upload_to='outlets/images/',
+        null=True,
+        blank=True,
+        help_text="Upload an image or provide an image URL."
+    )
+
+    # ✅ Optional URL field for image URI
+    outlet_image_url = models.URLField(
+        max_length=500,
+        null=True,
+        blank=True,
+        help_text="Alternatively, provide an image URL if no file is uploaded."
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -71,6 +91,21 @@ class Outlet(models.Model):
 
     def __str__(self):
         return f"{self.name} - {self.merchant.company_name}"
+
+    def clean(self):
+        """
+        Allow either an uploaded image or a URL, or neither — but not both.
+        """
+        if self.outlet_image and self.outlet_image_url:
+            raise ValidationError("Please provide either an image file or an image URL, not both.")
+
+        # Validate URL if provided
+        if self.outlet_image_url:
+            validator = URLValidator()
+            try:
+                validator(self.outlet_image_url)
+            except ValidationError:
+                raise ValidationError("Invalid image URL provided.")
 ###################################################################################################################################################################
 # New Coupon and Promotion models
 ###############################################################################################################################################################
@@ -228,5 +263,6 @@ class UserActivity(models.Model):
 
     def __str__(self):
         return f"{self.user.email} - {self.activity_type} - {self.points} points"
+
 
 
