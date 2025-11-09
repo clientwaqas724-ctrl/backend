@@ -26,6 +26,11 @@ from .serializers import QRScanSerializer  #########-> new api
 from .serializers import MyQRSerializer   #########-> last new Updated
 ######################################################################################
 ############################################################################################################################
+########################################################################################################################################################################
+from .serializers import AboutSerializer, MessageStreamSerializer  #########now New Updated 
+from rest_framework import viewsets  #########now New Updated 
+from rest_framework.permissions import IsAuthenticatedOrReadOnly #########now New Updated 
+from .models import About, MessageStream #########now New Updated 
 ##############################################################################################################################################################
 ###############################################################################################################################################################
 def get_tokens_for_user(user):
@@ -74,6 +79,7 @@ class UserRegistrationView(APIView):
 ################################################################################################################################################################
 class UserLoginView(APIView):
     permission_classes = [AllowAny]
+
     def post(self, request):
         serializer = UserLoginSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
@@ -90,23 +96,18 @@ class UserLoginView(APIView):
                 else None
             )
 
+            # ✅ Attach merchant outlets if user is a merchant
             outlet_details = []
-
-            # ✅ If user is a merchant, attach their outlets
             if user.role == User.MERCHANT:
                 try:
                     merchant = Merchant.objects.get(user=user)
                     outlets = Outlet.objects.filter(merchant=merchant)
-
                     for outlet in outlets:
-                        # ✅ Determine which image to use
-                        if outlet.outlet_image:
-                            outlet_image_url = request.build_absolute_uri(outlet.outlet_image.url)
-                        elif outlet.outlet_image_url:
-                            outlet_image_url = outlet.outlet_image_url
-                        else:
-                            outlet_image_url = None
-
+                        outlet_image_url = (
+                            request.build_absolute_uri(outlet.outlet_image.url)
+                            if outlet.outlet_image
+                            else outlet.outlet_image_url or None
+                        )
                         outlet_details.append({
                             'id': str(outlet.id),
                             'name': outlet.name,
@@ -117,12 +118,29 @@ class UserLoginView(APIView):
                             'latitude': outlet.latitude,
                             'longitude': outlet.longitude,
                             'contact_number': outlet.contact_number,
-                            'outlet_image': outlet_image_url,  # ✅ always return one URL here
+                            'outlet_image': outlet_image_url,
                             'created_at': outlet.created_at,
                             'updated_at': outlet.updated_at,
                         })
                 except Merchant.DoesNotExist:
                     outlet_details = []
+
+            # ✅ Ensure About info exists and serialize it
+            if not About.objects.exists():
+                About.objects.create(
+                    title="Customer Loyalty & Rewards App",
+                    description=(
+                        "This app helps customers earn points, claim coupons, and stay updated "
+                        "with the latest promotions and news. Customers can log in, scan QR codes "
+                        "to collect points, and redeem rewards. Merchants can scan customer QR codes "
+                        "to assign points. Admins manage merchants, post promotions and coupons, "
+                        "and update outlet locations to ensure a seamless loyalty experience."
+                    )
+                )
+            about_info = AboutSerializer(About.objects.last()).data
+
+            # ✅ Get default FAQs from MessageStreamViewSet
+            faqs = MessageStreamViewSet.DEFAULT_FAQS
 
             # ✅ Build final response
             return Response({
@@ -137,7 +155,9 @@ class UserLoginView(APIView):
                     'profile_image': profile_image_url,
                     'unique_qr_id': unique_qr_id,
                     'outlet_details': outlet_details,
-                }
+                },
+                'about': about_info,
+                'faqs': faqs
             }, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -353,8 +373,57 @@ class MyQRAPIView(APIView):
             'qr_image': qr_data['qr_image']  # base64 image for display
         }, status=status.HTTP_200_OK)
 ##########################################################################################
+##############################################################################################################################################################################
+##############################################################################################################################################################################
+class AboutViewSet(viewsets.ModelViewSet):
+    queryset = About.objects.all().order_by('-created_at')
+    serializer_class = AboutSerializer
+    permission_classes = [IsAuthenticatedOrReadOnly]
+    def get_queryset(self):
+        # Check if About record exists
+        if not About.objects.exists():
+            # If not, create default About info
+            About.objects.create(
+                title="Customer Loyalty & Rewards App",
+                description=(
+                    "This app helps customers earn points, claim coupons, and stay updated "
+                    "with the latest promotions and news. Customers can log in, scan QR codes "
+                    "to collect points, and redeem rewards. Merchants can scan customer QR codes "
+                    "to assign points. Admins manage merchants, post promotions and coupons, "
+                    "and update outlet locations to ensure a seamless loyalty experience."
+                )
+            )
+        return super().get_queryset()
+##############################################################################################################################################################################
+##############################################################################################################################################################################
+class MessageStreamViewSet(viewsets.ViewSet):
+    permission_classes = [IsAuthenticatedOrReadOnly]
+
+    # Predefined FAQ list
+    DEFAULT_FAQS = [
+        {"question": "How are you?", "answer": "Good, thank you! How about you?"},
+        {"question": "Can I check my points balance?", "answer": "Yes, your current points balance is shown on your profile in the app."},
+        {"question": "What’s your favorite feature of the app?", "answer": "I like earning points by scanning QR codes—it’s fun and easy!"},
+        {"question": "How do I claim a coupon?", "answer": "Go to the rewards section in the app and select the coupon you want to claim."},
+        {"question": "Are there any new promotions today?", "answer": "Yes, check the promotions tab to see all current offers."},
+        {"question": "Can I share my rewards with friends?", "answer": "Currently, points and coupons are personal and cannot be shared."},
+    ]
+
+    def list(self, request):
+        """
+        Return the predefined FAQ list directly.
+        """
+        return Response({"messages": self.DEFAULT_FAQS})
+
+    def create(self, request):
+        """
+        Optionally, allow creating new messages, but return the default FAQ list regardless.
+        """
+        return Response({"messages": self.DEFAULT_FAQS})
+##############################################################################################################################################################################
 def My_Home(request):
     return render(request,"index.html")
+
 
 
 
