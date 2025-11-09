@@ -152,6 +152,25 @@ class CustomerPoints(models.Model):
 
     def __str__(self):
         return f"{self.customer.email} — {self.total_points} pts"
+################################################################################################################################
+class About(models.Model):
+    title = models.CharField(max_length=255)
+    description = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.title
+##############################################################################################
+class MessageStream(models.Model):
+    question = models.TextField()  # unlimited length
+    answer = models.TextField()    # unlimited length
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        # Short preview of question for display in admin
+        return self.question[:50] + ("..." if len(self.question) > 50 else "")
 
 
 
