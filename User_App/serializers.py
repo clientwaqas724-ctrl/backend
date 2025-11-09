@@ -6,6 +6,7 @@ from django.utils.encoding import force_str
 from django.utils.http import urlsafe_base64_decode
 from .models import QRScan, CustomerPoints
 ############################################################################################################################
+from Merchants_App.models import Outlet    #########new update for login
 ############################################################################################################################
 class UserRegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(
@@ -232,6 +233,7 @@ class MyQRSerializer(serializers.Serializer):
     user_id = serializers.UUIDField()
     email = serializers.EmailField()
     qr_code = serializers.CharField()
+
 
 
 
