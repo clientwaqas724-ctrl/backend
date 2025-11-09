@@ -108,10 +108,17 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     )
 }
-
+####################################################################################################################
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=20),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    # ✅ Make access tokens last for 365 days (1 year)
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=365),
+
+    # ✅ Make refresh tokens last even longer (e.g., 10 years)
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=3650),
+
+    'ROTATE_REFRESH_TOKENS': False,
+    'BLACKLIST_AFTER_ROTATION': False,
+
     'AUTH_HEADER_TYPES': ('Bearer',),
     'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
     'USER_ID_FIELD': 'id',
@@ -122,9 +129,9 @@ SIMPLE_JWT = {
     'TOKEN_USER_CLASS': 'rest_framework_simplejwt.models.TokenUser',
     'JTI_CLAIM': 'jti',
 }
-
+####################################################################################
 PASSWORD_RESET_TIMEOUT = 900  # 900 Sec = 15 Min
-
+###################################################################################
 # CORS (useful if a React frontend calls the API)
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
@@ -141,6 +148,7 @@ EMAIL_HOST_PASSWORD = 'ykccfowsacybvitt'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 FRONTEND_URL = 'http://127.0.0.1:8000/api/user/'  # Update with your frontend URL
+
 
 
 
