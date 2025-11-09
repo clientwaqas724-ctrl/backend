@@ -34,6 +34,18 @@ class MerchantSerializer(serializers.ModelSerializer):
         return attrs
 ##########################################################################################################################################################
 class OutletSerializer(serializers.ModelSerializer):
+    # ✅ Add both optional image fields
+    outlet_image = serializers.ImageField(
+        required=False,
+        allow_null=True,
+        use_url=True
+    )
+    outlet_image_url = serializers.URLField(
+        required=False,
+        allow_blank=True,
+        allow_null=True
+    )
+
     class Meta:
         model = Outlet
         fields = [
@@ -47,17 +59,32 @@ class OutletSerializer(serializers.ModelSerializer):
             'latitude',
             'longitude',
             'contact_number',
+            'outlet_image',
+            'outlet_image_url',
             'created_at',
             'updated_at',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
-    # enforce every field to be required + custom messages
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # Make all fields required EXCEPT images and read-only fields
         for field_name, field in self.fields.items():
-            if field_name not in self.Meta.read_only_fields:
+            if field_name not in self.Meta.read_only_fields and field_name not in ['outlet_image', 'outlet_image_url']:
                 field.required = True
                 field.error_messages['required'] = f"{field_name.replace('_',' ').title()} is required."
+
+    def validate(self, data):
+        """
+        Ensure only one of outlet_image or outlet_image_url is provided.
+        Allow both to be empty.
+        """
+        image_file = data.get('outlet_image')
+        image_url = data.get('outlet_image_url')
+
+        if image_file and image_url:
+            raise serializers.ValidationError("Provide either an image file or an image URL, not both.")
+        return data
 ########################################################################################################################################################
 class CouponSerializer(serializers.ModelSerializer):
     class Meta:
@@ -249,6 +276,7 @@ class RedeemedCouponSerializer(serializers.ModelSerializer):
 
     def get_points_used(self, obj):
         return abs(obj.points)  # ensure positive integer
+
 
 
 
