@@ -82,7 +82,7 @@ class OutletViewSet(viewsets.ModelViewSet):
     Provides:
       • POST   /outlets/        -> create
       • GET    /outlets/        -> list (with ?search=<term>)
-      • GET    /outlets/<pk>/   -> retrieve single
+      • GET    /outlets/<pk>/   -> retrieve
       • PUT    /outlets/<pk>/   -> update
       • PATCH  /outlets/<pk>/   -> partial update
       • DELETE /outlets/<pk>/   -> delete
@@ -90,10 +90,13 @@ class OutletViewSet(viewsets.ModelViewSet):
     queryset = Outlet.objects.all().order_by('-created_at')
     serializer_class = OutletSerializer
 
-    # simple search by ?search=keyword across name, city, state, country
-    def list(self, request, *args, **kwargs):
-        search = request.query_params.get('search')
-        queryset = self.get_queryset()
+    def get_queryset(self):
+        """
+        Optionally filters results using ?search=<term>
+        across name, city, state, country, or address.
+        """
+        queryset = super().get_queryset()
+        search = self.request.query_params.get('search')
         if search:
             queryset = queryset.filter(
                 Q(name__icontains=search) |
@@ -102,12 +105,30 @@ class OutletViewSet(viewsets.ModelViewSet):
                 Q(country__icontains=search) |
                 Q(address__icontains=search)
             )
-        page = self.paginate_queryset(queryset)
-        if page is not None:
-            serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
+        return queryset
+
+    def create(self, request, *args, **kwargs):
+        """
+        Handle multipart (file upload) and JSON (URL) input seamlessly.
+        Restrict each merchant to have only one outlet.
+        """
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        merchant = serializer.validated_data.get('merchant')
+
+        # ✅ Prevent multiple outlets per merchant
+        if Outlet.objects.filter(merchant=merchant).exists():
+            return Response(
+                {"detail": f"Merchant '{merchant.company_name}' already has an outlet assigned."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        outlet = serializer.save()
+        return Response(
+            self.get_serializer(outlet).data,
+            status=status.HTTP_201_CREATED
+        )
 ###############################################################################################################################################################
 ###############################################################################################################################################################
 class CouponViewSet(viewsets.ModelViewSet):
@@ -790,6 +811,7 @@ class MerchantScanQRAPIView(APIView):
             },
             status=status.HTTP_200_OK
         )
+
 
 
 
