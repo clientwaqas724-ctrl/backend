@@ -7,6 +7,9 @@ from django.utils.http import urlsafe_base64_decode
 from .models import QRScan, CustomerPoints
 ############################################################################################################################
 from Merchants_App.models import Outlet    #########new update for login
+###############################################################
+###new Updated###############################
+from .models import About,MessageStream
 ############################################################################################################################
 class UserRegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(
@@ -233,6 +236,18 @@ class MyQRSerializer(serializers.Serializer):
     user_id = serializers.UUIDField()
     email = serializers.EmailField()
     qr_code = serializers.CharField()
+##########################################################################################################################################################
+##########################################################################################################################################################
+################(New Updated)##############################
+class AboutSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = About
+        fields = '__all__'
+#############################################################################       
+class MessageStreamSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MessageStream
+        fields = '__all__'
 
 
 
