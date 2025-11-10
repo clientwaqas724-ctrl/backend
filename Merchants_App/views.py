@@ -25,6 +25,9 @@ from User_App.models import User,QRScan
 User = get_user_model()
 from User_App.models import User, QRScan, CustomerPoints   #########newupdated
 from Loyalty_App.models import Transaction   ##########--> new update
+#######################today New Updation######################################
+from django.utils import timezone
+from .serializers import CustomerCouponActionSerializer
 ################################################################################################################################################################
 ################################################################################################################################################################
 class MerchantViewSet(viewsets.ModelViewSet):
@@ -129,23 +132,20 @@ class OutletViewSet(viewsets.ModelViewSet):
             self.get_serializer(outlet).data,
             status=status.HTTP_201_CREATED
         )
-###############################################################################################################################################################
-###############################################################################################################################################################
+###########################################################################################################################################################################################################
+###################################################################################################################################################################################################################
 class CouponViewSet(viewsets.ModelViewSet):
-    """
-    Provides:
-      • POST   /coupons/        -> create
-      • GET    /coupons/        -> list (with ?search=<term>)
-      • GET    /coupons/<pk>/   -> retrieve single
-      • PUT    /coupons/<pk>/   -> update
-      • PATCH  /coupons/<pk>/   -> partial update
-      • DELETE /coupons/<pk>/   -> delete
-    """
     queryset = Coupon.objects.all().order_by('-created_at')
     serializer_class = CouponSerializer
 
-    # simple search by ?search=keyword across title or merchant company name
+    def get_queryset(self):
+        """Auto-update expired coupons before returning queryset."""
+        now = timezone.now().date()
+        Coupon.objects.filter(expiry_date__lt=now, status='active').update(status='expired')
+        return super().get_queryset()
+
     def list(self, request, *args, **kwargs):
+        """Support search by title or merchant name."""
         search = request.query_params.get('search')
         queryset = self.get_queryset()
         if search:
@@ -159,8 +159,62 @@ class CouponViewSet(viewsets.ModelViewSet):
             return self.get_paginated_response(serializer.data)
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
+
+    def redeem(self, request, pk=None):
+        """Custom endpoint for redeeming a coupon (via code or scan)."""
+        try:
+            coupon = Coupon.objects.get(pk=pk)
+        except Coupon.DoesNotExist:
+            return Response({'error': 'Coupon not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if coupon.status != Coupon.STATUS_ACTIVE:
+            return Response({'error': f"Coupon is not active (current status: {coupon.status})."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        if coupon.is_expired():
+            coupon.status = Coupon.STATUS_EXPIRED
+            coupon.save()
+            return Response({'error': 'Coupon has expired.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        coupon.status = Coupon.STATUS_USED
+        coupon.save()
+        return Response({'success': 'Coupon successfully redeemed!'}, status=status.HTTP_200_OK)
 ##########################################################################################################################################################
-##########################################################################################################################################################
+######################Today new Updations please##############################
+class PublicCouponViewSet(viewsets.ViewSet):
+    """
+    Public API for merchants/customers to scan and auto-redeem coupons.
+    Only uses coupon code, returns status messages.
+    """
+
+    @action(detail=False, methods=['post'], url_path='scan')
+    def scan_coupon(self, request):
+        """
+        Scan a coupon code and automatically mark it as used if valid.
+        Returns simple status messages only.
+        """
+        serializer = CustomerCouponActionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        code = serializer.validated_data['coupon_code']
+
+        try:
+            coupon = Coupon.objects.get(code=code)
+        except Coupon.DoesNotExist:
+            return Response({"status_message": "Coupon not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Check coupon status
+        if coupon.status == Coupon.STATUS_USED:
+            return Response({"status_message": "Coupon already redeemed."}, status=status.HTTP_400_BAD_REQUEST)
+        if coupon.status == Coupon.STATUS_EXPIRED or (coupon.expiry_date and coupon.expiry_date < timezone.now().date()):
+            return Response({"status_message": "Coupon expired."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # If valid, automatically mark as used
+        coupon.status = Coupon.STATUS_USED
+        coupon.save()
+
+        return Response({"status_message": "You successfully used the coupon."}, status=status.HTTP_200_OK)
+##############################################################################################################################################################################################################
+##############################################################################################################################################################################################################
 class PromotionViewSet(viewsets.ModelViewSet):
     """
     Provides:
@@ -811,6 +865,7 @@ class MerchantScanQRAPIView(APIView):
             },
             status=status.HTTP_200_OK
         )
+
 
 
 
