@@ -80,6 +80,28 @@ class UserRegistrationView(APIView):
 class UserLoginView(APIView):
     permission_classes = [AllowAny]
 
+    # ✅ Static About info
+    ABOUT_INFO = {
+        "title": "Customer Loyalty & Rewards App",
+        "description": (
+            "This app helps customers earn points, claim coupons, and stay updated "
+            "with the latest promotions and news. Customers can log in, scan QR codes "
+            "to collect points, and redeem rewards. Merchants can scan customer QR codes "
+            "to assign points. Admins manage merchants, post promotions and coupons, "
+            "and update outlet locations to ensure a seamless loyalty experience."
+        )
+    }
+
+    # ✅ Static FAQ list
+    DEFAULT_FAQS = [
+        {"question": "How are you?", "answer": "Good, thank you! How about you?"},
+        {"question": "Can I check my points balance?", "answer": "Yes, your current points balance is shown on your profile in the app."},
+        {"question": "What’s your favorite feature of the app?", "answer": "I like earning points by scanning QR codes—it’s fun and easy!"},
+        {"question": "How do I claim a coupon?", "answer": "Go to the rewards section in the app and select the coupon you want to claim."},
+        {"question": "Are there any new promotions today?", "answer": "Yes, check the promotions tab to see all current offers."},
+        {"question": "Can I share my rewards with friends?", "answer": "Currently, points and coupons are personal and cannot be shared."},
+    ]
+
     def post(self, request):
         serializer = UserLoginSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
@@ -125,23 +147,6 @@ class UserLoginView(APIView):
                 except Merchant.DoesNotExist:
                     outlet_details = []
 
-            # ✅ Ensure About info exists and serialize it
-            if not About.objects.exists():
-                About.objects.create(
-                    title="Customer Loyalty & Rewards App",
-                    description=(
-                        "This app helps customers earn points, claim coupons, and stay updated "
-                        "with the latest promotions and news. Customers can log in, scan QR codes "
-                        "to collect points, and redeem rewards. Merchants can scan customer QR codes "
-                        "to assign points. Admins manage merchants, post promotions and coupons, "
-                        "and update outlet locations to ensure a seamless loyalty experience."
-                    )
-                )
-            about_info = AboutSerializer(About.objects.last()).data
-
-            # ✅ Get default FAQs from MessageStreamViewSet
-            faqs = MessageStreamViewSet.DEFAULT_FAQS
-
             # ✅ Build final response
             return Response({
                 'token': token,
@@ -156,8 +161,8 @@ class UserLoginView(APIView):
                     'unique_qr_id': unique_qr_id,
                     'outlet_details': outlet_details,
                 },
-                'about': about_info,
-                'faqs': faqs
+                'about': self.ABOUT_INFO,
+                'faqs': self.DEFAULT_FAQS
             }, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -423,6 +428,7 @@ class MessageStreamViewSet(viewsets.ViewSet):
 ##############################################################################################################################################################################
 def My_Home(request):
     return render(request,"index.html")
+
 
 
 
