@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: backend
+    runtime: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn backend.wsgi:application"
+    preDeployCommand: |
+      python manage.py makemigrations --noinput
+      python manage.py migrate --noinput
+      python manage.py shell < backend/create_superuser.py
