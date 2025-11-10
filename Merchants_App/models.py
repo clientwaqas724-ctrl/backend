@@ -6,6 +6,10 @@ from django.conf import settings   # to reference the custom User model
 ##########New Updated#########################################
 from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError
+###############This day new Updation###################################
+from django.utils import timezone
+from django.core.validators import MinValueValidator
+# from django.contrib.postgres.fields import ArrayField  # keep if using Postgres in production  # for list of terms
 #######################################################################################################################################################
 ########################################################################################################################################################
 class Merchant(models.Model):
@@ -111,34 +115,72 @@ class Outlet(models.Model):
 ###############################################################################################################################################################
 class Coupon(models.Model):
     STATUS_ACTIVE = 'active'
+    STATUS_USED = 'used'
     STATUS_EXPIRED = 'expired'
+    STATUS_INACTIVE = 'inactive'
+
     STATUS_CHOICES = [
         (STATUS_ACTIVE, 'Active'),
+        (STATUS_USED, 'Used'),
         (STATUS_EXPIRED, 'Expired'),
+        (STATUS_INACTIVE, 'Inactive'),
     ]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     merchant = models.ForeignKey(
-        Merchant,
+        'Merchant',
         on_delete=models.CASCADE,
         related_name='coupons'
     )
     title = models.CharField(max_length=150)
-    description = models.TextField()
-    points_required = models.PositiveIntegerField()
+    description = models.TextField(blank=True, null=True)
+
+    # Optional image fields
+    image = models.ImageField(upload_to='coupon_images/', blank=True, null=True)
+    image_url = models.URLField(blank=True, null=True, help_text="Optional external image URL")
+    code = models.CharField(
+        max_length=20,
+        unique=True,
+        null=True,
+        blank=True,
+        help_text="Unique code or QR string for redemption"
+    )
+
+    points_required = models.PositiveIntegerField(validators=[MinValueValidator(1)])
+    start_date = models.DateField(default=timezone.now)
     expiry_date = models.DateField()
+
+    # ✅ Single long text field for all terms
+    terms_and_conditions_text = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Write full terms and conditions here as long text"
+    )
+
     status = models.CharField(
-        max_length=8,
+        max_length=10,
         choices=STATUS_CHOICES,
         default=STATUS_ACTIVE
     )
+
     created_at = models.DateTimeField(auto_now_add=True)
+
     class Meta:
         db_table = 'coupons'
         verbose_name = 'Coupon'
         verbose_name_plural = 'Coupons'
+        ordering = ['-created_at']
 
     def __str__(self):
         return f"{self.title} ({self.merchant.company_name})"
+
+    def is_expired(self):
+        return timezone.now().date() > self.expiry_date
+
+    def save(self, *args, **kwargs):
+        if self.is_expired():
+            self.status = self.STATUS_EXPIRED
+        super().save(*args, **kwargs)
 #######################################################################################################################################################
 ########################################################################################################################################################
 class Promotion(models.Model):
@@ -263,6 +305,7 @@ class UserActivity(models.Model):
 
     def __str__(self):
         return f"{self.user.email} - {self.activity_type} - {self.points} points"
+
 
 
 
