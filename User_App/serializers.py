@@ -4,9 +4,11 @@ from django.contrib.auth import authenticate
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.utils.encoding import force_str
 from django.utils.http import urlsafe_base64_decode
+####################################################################
 from .models import QRScan, CustomerPoints
 ############################################################################################################################
 from Merchants_App.models import Outlet    #########new update for login
+###############################################
 ###############################################################
 ###new Updated###############################
 from .models import About,MessageStream
@@ -53,8 +55,8 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data.pop('password2')
         return User.objects.create_user(**validated_data)
-############################################################################################################################
-############################################################################################################################
+################################################################################################################################################################
+###############################################################################################################################################################
 class UserLoginSerializer(serializers.Serializer):
     email = serializers.EmailField(
         required=True,
@@ -65,7 +67,6 @@ class UserLoginSerializer(serializers.Serializer):
         required=True,
         error_messages={'required': 'This field is required.'}
     )
-
     def validate(self, attrs):
         email = attrs.get('email')
         password = attrs.get('password')
@@ -77,7 +78,6 @@ class UserLoginSerializer(serializers.Serializer):
                 raise serializers.ValidationError('Invalid email or password')
         else:
             raise serializers.ValidationError('Must include "email" and "password"')
-        
         attrs['user'] = user
         return attrs
 ############################################################################################################################
@@ -184,6 +184,8 @@ class ChangePasswordSerializer(serializers.Serializer):
         return attrs
 ###############################################################################################################################
 ################################################################################################################################
+###############################################################################################################################
+################################################################################################################################
 class UserProfileUpdateSerializer(serializers.ModelSerializer):
     """
     Serializer for updating the user's full profile details.
@@ -204,8 +206,7 @@ class UserProfileUpdateSerializer(serializers.ModelSerializer):
         if User.objects.filter(phone=value).exclude(id=user.id).exists():
             raise serializers.ValidationError("This phone number is already taken.")
         return value
-###############################################################################################################################
-################################################################################################################################
+##############################################################################################################
 class QRScanSerializer(serializers.Serializer):
     qr_code = serializers.CharField(required=True, error_messages={'required': 'QR code is required.'})
 
@@ -231,7 +232,8 @@ class QRScanSerializer(serializers.Serializer):
         wallet.save()
 
         return {'points_awarded': points_awarded, 'total_points': wallet.total_points}
-#######################################################################################################################
+#####################################################################################################################
+#################################################(new Updated)######################
 class MyQRSerializer(serializers.Serializer):
     user_id = serializers.UUIDField()
     email = serializers.EmailField()
@@ -248,13 +250,3 @@ class MessageStreamSerializer(serializers.ModelSerializer):
     class Meta:
         model = MessageStream
         fields = '__all__'
-
-
-
-
-
-
-
-
-
-

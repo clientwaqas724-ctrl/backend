@@ -18,14 +18,21 @@ from .serializers import(
     ResetPasswordSerializer, 
     ChangePasswordSerializer,
     UserListSerializer,
-    ##############################################################################################
-    UserProfileUpdateSerializer   #####>=============> new api
+##############################################################################################
+    UserProfileUpdateSerializer,   #####>=============> new api
+    
 )
 from .models import User
-from .serializers import QRScanSerializer  #########-> new api
+#######################################################
 from .serializers import MyQRSerializer   #########-> last new Updated
-######################################################################################
-############################################################################################################################
+#########################################################################################################
+from .serializers import QRScanSerializer  #########-> new api
+####################################################################################################
+from Merchants_App.models import Merchant, Outlet, Coupon, UserActivity, UserPoints
+from datetime import date, timedelta
+from django.db.models import Count, Sum
+#########################################################
+from django.shortcuts import render, redirect ###---->
 ########################################################################################################################################################################
 from .serializers import AboutSerializer, MessageStreamSerializer  #########now New Updated 
 from rest_framework import viewsets  #########now New Updated 
@@ -41,11 +48,6 @@ def get_tokens_for_user(user):
     }
 #############################################################################################################################################################
 import uuid   # ✅ added for unique QR generation
-from Merchants_App.models import Merchant, Outlet, Coupon, UserActivity, UserPoints
-from datetime import date, timedelta
-from django.db.models import Count, Sum
-###############################################################################
-from django.shortcuts import render, redirect ###---->new updated
 ################################################################################################################################################################
 class UserRegistrationView(APIView):
     permission_classes = [AllowAny]
@@ -77,6 +79,7 @@ class UserRegistrationView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 #############################################################################################################################################################
 ################################################################################################################################################################
+########Update new in login#################
 class UserLoginView(APIView):
     permission_classes = [AllowAny]
 
@@ -328,8 +331,7 @@ class UserProfileUpdateView(APIView):
                 'user': UserProfileSerializer(user).data
             }, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-#############################################################################################################################################################
-################################################################################################################################################################
+##########################################################################################################################
 class QRScanAPIView(APIView):
     """
     Customer scans a QR and earns points.
@@ -347,8 +349,7 @@ class QRScanAPIView(APIView):
                 'total_points': result['total_points']
             }, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-#############################################################################################################################################################
-################################################################################################################################################################
+#################################################################################################################################################################
 class MyQRAPIView(APIView):
     """
     GET /api/my-qr/
@@ -372,7 +373,6 @@ class MyQRAPIView(APIView):
             'qr_text': qr_data['qr_text'],   # "user:<uuid>"
             'qr_image': qr_data['qr_image']  # base64 image for display
         }, status=status.HTTP_200_OK)
-##########################################################################################
 ##############################################################################################################################################################################
 ##############################################################################################################################################################################
 class AboutViewSet(viewsets.ModelViewSet):
@@ -423,17 +423,3 @@ class MessageStreamViewSet(viewsets.ViewSet):
 ##############################################################################################################################################################################
 def My_Home(request):
     return render(request,"index.html")
-
-
-
-
-
-
-
-
-
-
-
-
-
-

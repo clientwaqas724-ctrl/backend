@@ -53,7 +53,7 @@ class CustomUserAdmin(UserAdmin):
     search_fields = ('email', 'name', 'phone')
     ordering = ('email',)
     readonly_fields = ('created_at', 'updated_at')
-#######################################################################################################################################
+######################################################################################################################
 ###########################################################################################################
 # QRScan Admin
 ###########################################################################################################
@@ -63,6 +63,7 @@ class QRScanAdmin(admin.ModelAdmin):
     list_filter = ('scanned_at',)
     search_fields = ('customer__email', 'qr_code')
     ordering = ('-scanned_at',)
+
 ###########################################################################################################
 # CustomerPoints Admin
 ###########################################################################################################
@@ -89,12 +90,10 @@ class MessageStreamAdmin(admin.ModelAdmin):
     list_display = ('question', 'created_at', 'updated_at')
     search_fields = ('question', 'answer')
     readonly_fields = ('created_at', 'updated_at')
-##########################################################
+##########################################################################################################
 # Register the custom user model with the custom admin
 admin.site.register(User, CustomUserAdmin)
 # ---- Custom Admin Site Titles ----
 admin.site.site_header = "Customer_Loyalty_Platform – User Management"
 admin.site.site_title = "Customer_Loyalty_Platform Admin"
 admin.site.index_title = "Customer_Loyalty_Platform Administration"
-
-

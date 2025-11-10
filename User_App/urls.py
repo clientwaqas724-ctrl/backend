@@ -12,19 +12,21 @@ from .views import (
     ResetPasswordView,
     ChangePasswordView,
     UserSearchView,
-    ############################################################
-    AboutViewSet,   ####new updated
-    MessageStreamViewSet  ########new updated
+############################################################
+AboutViewSet,      ####new updated
+MessageStreamViewSet  ########new updated
 #####################################################################
 )
-#####################################################################
+##############################################################################################
 router = DefaultRouter()   ####new updated
 router.register(r'about', AboutViewSet, basename='about') ####new updated
 router.register(r'message-stream', MessageStreamViewSet, basename='message-stream') ####new updated
-########################################################################################
+######################################################################################################################
 from .views import UserProfileUpdateView
-from .views import QRScanAPIView  #=======> new update====>
+#########################################################
+from .views import QRScanAPIView  
 from .views import MyQRAPIView  #=======> new update====>
+###########################################################################
 ################################################################################################################
 urlpatterns = [
     path('register/', UserRegistrationView.as_view(), name='register'),
@@ -39,12 +41,9 @@ urlpatterns = [
     path('profile/update/', UserProfileUpdateView.as_view(), name='profile-update'),  # 👈 added
     ##############################################################################################################
     path('qr/scan/', QRScanAPIView.as_view(), name='qr-scan'),   ###+> new updated
+    ##############################################################################################################
     path('my-qr/', MyQRAPIView.as_view(), name='my_qr'),  #=======> new update====>
+
 
 ]
 ###############################################################################################
-
-
-
-
-
