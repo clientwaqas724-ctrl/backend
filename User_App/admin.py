@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import User,QRScan, CustomerPoints,About,MessageStream
+from .models import User,QRScan, CustomerPoints
 ###################################################################################################
 class CustomUserAdmin(UserAdmin):
     list_display = (
@@ -72,23 +72,7 @@ class CustomerPointsAdmin(admin.ModelAdmin):
     search_fields = ('customer__email',)
     ordering = ('-total_points',)
 ########################################################################################################
-# ==========================
-# About Admin
-# ==========================
-@admin.register(About)
-class AboutAdmin(admin.ModelAdmin):
-    list_display = ('title', 'created_at', 'updated_at')
-    search_fields = ('title', 'description')
-    readonly_fields = ('created_at', 'updated_at')
-############################################################################################################
-# ==========================
-# MessageStream Admin
-# ==========================
-@admin.register(MessageStream)
-class MessageStreamAdmin(admin.ModelAdmin):
-    list_display = ('question', 'created_at', 'updated_at')
-    search_fields = ('question', 'answer')
-    readonly_fields = ('created_at', 'updated_at')
+
 ##########################################################
 # Register the custom user model with the custom admin
 admin.site.register(User, CustomUserAdmin)
@@ -96,5 +80,6 @@ admin.site.register(User, CustomUserAdmin)
 admin.site.site_header = "Customer_Loyalty_Platform – User Management"
 admin.site.site_title = "Customer_Loyalty_Platform Admin"
 admin.site.index_title = "Customer_Loyalty_Platform Administration"
+
 
 
