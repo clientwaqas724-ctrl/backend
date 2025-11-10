@@ -13,14 +13,10 @@ from .views import (
     ChangePasswordView,
     UserSearchView,
     ############################################################
-    AboutViewSet,   ####new updated
-    MessageStreamViewSet  ########new updated
 #####################################################################
 )
 #####################################################################
 router = DefaultRouter()   ####new updated
-router.register(r'about', AboutViewSet, basename='about') ####new updated
-router.register(r'message-stream', MessageStreamViewSet, basename='message-stream') ####new updated
 ########################################################################################
 from .views import UserProfileUpdateView
 from .views import QRScanAPIView  #=======> new update====>
@@ -43,6 +39,7 @@ urlpatterns = [
 
 ]
 ###############################################################################################
+
 
 
 
