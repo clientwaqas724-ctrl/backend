@@ -3,6 +3,9 @@ from .models import Merchant,Outlet,Coupon,Promotion,Tier, UserPoints, UserActiv
 from django.conf import settings
 from django.contrib.auth import get_user_model
 User = get_user_model()  # ✅ Get actual User model class
+#################################################################################################################################################################
+from django.utils import timezone   ########today New Updation library###########
+import uuid
 ################################################################################################################################################################
 class MerchantSerializer(serializers.ModelSerializer):
     # Explicitly override fields to force required=True
@@ -85,40 +88,88 @@ class OutletSerializer(serializers.ModelSerializer):
         if image_file and image_url:
             raise serializers.ValidationError("Provide either an image file or an image URL, not both.")
         return data
-########################################################################################################################################################
+#########################################################################################################################################################################################################
+#########################################################################################################################################################################################################
+#########################################################(New Updation of the CouponSerilizer)#####################################
+######################Today new Updations please##############################
+class TermsAndConditionsField(serializers.Field):
+    """
+    Accepts either a string or a list of strings and always stores as a single string in DB.
+    Returns a list of strings in API responses.
+    """
+    def to_internal_value(self, data):
+        # Accept list or string as input
+        if isinstance(data, list):
+            if not all(isinstance(v, str) for v in data):
+                raise serializers.ValidationError("All items in terms and conditions list must be strings.")
+            return "\n".join(data)  # store as single string
+        elif isinstance(data, str):
+            return data
+        raise serializers.ValidationError("Terms and conditions must be a string or a list of strings.")
+
+    def to_representation(self, value):
+        if not value:
+            return []
+        # Split the stored string by newlines and return as list
+        return [line.strip() for line in value.split("\n") if line.strip()]
+
+
 class CouponSerializer(serializers.ModelSerializer):
+    merchant_name = serializers.CharField(source='merchant.company_name', read_only=True)
+    terms_and_conditions_text = TermsAndConditionsField()
+
     class Meta:
         model = Coupon
         fields = [
             'id',
             'merchant',
+            'merchant_name',
             'title',
             'description',
+            'image',
+            'image_url',
             'points_required',
+            'start_date',
             'expiry_date',
+            'terms_and_conditions_text',
+            'code',
             'status',
             'created_at',
         ]
-        # these are automatically generated; keep them read-only
-        read_only_fields = ['id', 'created_at']
+        read_only_fields = ['id', 'created_at', 'status', 'code']
+
     def __init__(self, *args, **kwargs):
-        """
-        Enforce every non–read-only field to be required
-        and provide a clear, human-friendly error message.
-        """
         super().__init__(*args, **kwargs)
         for field_name, field in self.fields.items():
-            if field_name not in self.Meta.read_only_fields:
+            if field_name in ['image', 'image_url']:
+                field.required = False
+                field.allow_blank = True
+            elif field_name not in self.Meta.read_only_fields:
                 field.required = True
                 field.allow_blank = False
-                # Custom messages
-                field.error_messages['required'] = (
-                    f"{field_name.replace('_', ' ').title()} is required."
-                )
-                field.error_messages['blank'] = (
-                    f"{field_name.replace('_', ' ').title()} cannot be blank."
-                )
-################################################################################################################################################################
+                field.error_messages['required'] = f"{field_name.replace('_', ' ').title()} is required."
+                field.error_messages['blank'] = f"{field_name.replace('_', ' ').title()} cannot be blank."
+
+    def validate(self, data):
+        start = data.get('start_date', getattr(self.instance, 'start_date', None))
+        expiry = data.get('expiry_date', getattr(self.instance, 'expiry_date', None))
+        if start and expiry and expiry < start:
+            raise serializers.ValidationError("Expiry date must be after start date.")
+        return data
+
+    def create(self, validated_data):
+        # Auto-generate unique coupon code
+        validated_data['code'] = f"COUP-{uuid.uuid4().hex[:8].upper()}"
+        return super().create(validated_data)
+###################################################################################
+######################Today new Updations please##############################
+class CustomerCouponActionSerializer(serializers.Serializer):
+    """
+    Serializer for customer coupon actions (scan/redeem).
+    """
+    coupon_code = serializers.CharField(required=True, max_length=100)
+#########################################################################################################################################################################################################
+#########################################################################################################################################################################################################
 class PromotionSerializer(serializers.ModelSerializer):
     # Override each field to add custom required messages
     merchant = serializers.PrimaryKeyRelatedField(
@@ -276,6 +327,7 @@ class RedeemedCouponSerializer(serializers.ModelSerializer):
 
     def get_points_used(self, obj):
         return abs(obj.points)  # ensure positive integer
+
 
 
 
