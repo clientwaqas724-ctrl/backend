@@ -1,23 +1,26 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from .models import User,QRScan, CustomerPoints
-###################################################################################################
+###################################################################################################################################################################################################
 class CustomUserAdmin(UserAdmin):
     list_display = (
         'email',
         'name',
         'phone',
         'role',
+        'country',
+        'state',
+        'postal_code',
         'is_staff',
         'is_active',
         'created_at',
         'updated_at',
     )
-    list_filter = ('role', 'is_staff', 'is_active', 'is_superuser')
+    list_filter = ('role', 'is_staff', 'is_active', 'is_superuser', 'country', 'state')
 
     fieldsets = (
         (None, {'fields': ('email', 'password')}),
-        ('Personal Info', {'fields': ('name', 'phone', 'profile_image')}),
+        ('Personal Info', {'fields': ('name', 'phone', 'profile_image', 'country', 'state', 'postal_code')}),
         ('Role & Permissions', {
             'fields': (
                 'role',
@@ -40,6 +43,9 @@ class CustomUserAdmin(UserAdmin):
                 'name',
                 'phone',
                 'profile_image',
+                'country',
+                'state',
+                'postal_code',
                 'role',
                 'tc',
                 'password1',
@@ -50,7 +56,7 @@ class CustomUserAdmin(UserAdmin):
         }),
     )
 
-    search_fields = ('email', 'name', 'phone')
+    search_fields = ('email', 'name', 'phone', 'country', 'state', 'postal_code')
     ordering = ('email',)
     readonly_fields = ('created_at', 'updated_at')
 #######################################################################################################################################
@@ -80,6 +86,7 @@ admin.site.register(User, CustomUserAdmin)
 admin.site.site_header = "Customer_Loyalty_Platform – User Management"
 admin.site.site_title = "Customer_Loyalty_Platform Admin"
 admin.site.index_title = "Customer_Loyalty_Platform Administration"
+
 
 
 
