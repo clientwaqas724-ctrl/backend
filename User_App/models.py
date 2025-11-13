@@ -1,6 +1,6 @@
 import uuid
 from django.db import models
-from django.contrib.auth.models import(
+from django.contrib.auth.models import (
     BaseUserManager,
     AbstractBaseUser,
     PermissionsMixin
@@ -8,6 +8,7 @@ from django.contrib.auth.models import(
 import qrcode
 import io
 import base64
+
 ################################################################################################################################################
 ################################################################################################################################################
 class UserManager(BaseUserManager):
@@ -20,6 +21,9 @@ class UserManager(BaseUserManager):
         password2=None,
         role='customer',
         phone=None,
+        country=None,
+        state=None,
+        postal_code=None,
         **extra_fields
     ):
         if not email:
@@ -33,6 +37,9 @@ class UserManager(BaseUserManager):
             tc=tc,
             role=role,
             phone=phone,
+            country=country,
+            state=state,
+            postal_code=postal_code,
             **extra_fields
         )
         user.set_password(password)  # hashes password
@@ -55,7 +62,7 @@ class UserManager(BaseUserManager):
 ##############################################################################################################################################
 ##############################################################################################################################################
 class User(AbstractBaseUser, PermissionsMixin):
-    # Role choices to match ENUM(admin, merchant, customer)
+    # Role choices
     ADMIN = 'admin'
     MERCHANT = 'merchant'
     CUSTOMER = 'customer'
@@ -65,16 +72,19 @@ class User(AbstractBaseUser, PermissionsMixin):
         (CUSTOMER, 'Customer'),
     ]
 
-    # Primary key as UUID (change to BigAutoField if you prefer integer)
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default=CUSTOMER)
     name = models.CharField(max_length=100)
     email = models.EmailField(max_length=150, unique=True)
     phone = models.CharField(max_length=20, unique=True)
     profile_image = models.TextField(blank=True, null=True)
 
-    tc = models.BooleanField()  # terms & conditions or similar
+    # ✅ New fields
+    country = models.CharField(max_length=100, blank=True, null=True)
+    state = models.CharField(max_length=100, blank=True, null=True)
+    postal_code = models.CharField(max_length=20, blank=True, null=True)
+
+    tc = models.BooleanField()
 
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
@@ -92,22 +102,21 @@ class User(AbstractBaseUser, PermissionsMixin):
         return self.email
 
     def has_perm(self, perm, obj=None):
-        # Admins get all permissions
         if self.role == self.ADMIN:
             return True
         return super().has_perm(perm, obj)
 
     def has_module_perms(self, app_label):
-        # Admin can access all modules
         if self.role == self.ADMIN:
             return True
-        # merchants/customers: limit as needed
         return app_label in ['auth']
+
     @property
     def is_admin(self):
         return self.role == self.ADMIN or self.is_superuser
+
     ##############################################################################################
-    # ✅ UPDATED: Generate both QR text and image for customers
+    # ✅ QR Code Generator
     def generate_qr_code(self):
         """
         Generates the customer's personal QR code.
@@ -118,9 +127,7 @@ class User(AbstractBaseUser, PermissionsMixin):
             "qr_image": "data:image/png;base64,<...>"
         }
         """
-        qr_text = f"user:{self.id}"  # this is what the merchant scans
-
-        # Create QR image
+        qr_text = f"user:{self.id}"
         qr_img = qrcode.make(qr_text)
         buffer = io.BytesIO()
         qr_img.save(buffer, format="PNG")
@@ -130,9 +137,9 @@ class User(AbstractBaseUser, PermissionsMixin):
             "qr_text": qr_text,
             "qr_image": f"data:image/png;base64,{qr_base64}"
         }
-##############################################################################################################################################
-##############################################################################################################################################
-###########################################################################################################
+########################################################################################################################################################################################################
+###########################################################################################################################################################################################################
+###########################################################################################################################################################################################################
 # QRScan & CustomerPoints Models=======> new
 ###########################################################################################################
 class QRScan(models.Model):
@@ -153,6 +160,7 @@ class CustomerPoints(models.Model):
     def __str__(self):
         return f"{self.customer.email} — {self.total_points} pts"
 ################################################################################################################################
+
 
 
 
