@@ -44,7 +44,7 @@ from datetime import date, timedelta
 from django.db.models import Count, Sum
 ###############################################################################
 from django.shortcuts import render, redirect ###---->new updated
-################################################################################################################################################################
+########################################################################################################################################################################################################
 class UserRegistrationView(APIView):
     permission_classes = [AllowAny]
 
@@ -65,20 +65,24 @@ class UserRegistrationView(APIView):
                 'token': token,
                 'message': 'Registration Successful',
                 'user': {
-                    'id': user.id,
+                    'id': str(user.id),
                     'email': user.email,
                     'name': user.name,
                     'role': user.role,
-                    'phone': user.phone
+                    'phone': user.phone,
+                    'country': user.country,
+                    'state': user.state,
+                    'postal_code': user.postal_code,
                 }
             }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-#############################################################################################################################################################
-################################################################################################################################################################
+
+##############################################################################################################################################################
+# ✅ User Login View (Updated)
+##############################################################################################################################################################
 class UserLoginView(APIView):
     permission_classes = [AllowAny]
 
-    # ✅ Static About info
     ABOUT_INFO = {
         "title": "Customer Loyalty & Rewards App",
         "description": (
@@ -90,7 +94,6 @@ class UserLoginView(APIView):
         )
     }
 
-    # ✅ Static FAQ list
     DEFAULT_FAQS = [
         {"question": "How are you?", "answer": "Good, thank you! How about you?"},
         {"question": "Can I check my points balance?", "answer": "Yes, your current points balance is shown on your profile in the app."},
@@ -105,18 +108,16 @@ class UserLoginView(APIView):
         if serializer.is_valid():
             user = serializer.validated_data['user']
             token = get_tokens_for_user(user)
-
-            # ✅ Generate unique QR ID
             unique_qr_id = str(uuid.uuid4())
 
-            # ✅ Build absolute profile image URL if available
+            # ✅ Build profile image URL
             profile_image_url = (
                 request.build_absolute_uri(user.profile_image.url)
                 if getattr(user, 'profile_image', None) and hasattr(user.profile_image, 'url')
-                else None
+                else user.profile_image or None
             )
 
-            # ✅ Attach merchant outlets if user is a merchant
+            # ✅ Merchant outlet info (if applicable)
             outlet_details = []
             if user.role == User.MERCHANT:
                 try:
@@ -145,75 +146,62 @@ class UserLoginView(APIView):
                 except Merchant.DoesNotExist:
                     outlet_details = []
 
-            # ✅ Build final response
+            # ✅ Include new fields (country, state, postal_code) for ALL users
+            user_data = {
+                'id': str(user.id),
+                'email': user.email,
+                'name': user.name,
+                'role': user.role,
+                'phone': user.phone,
+                'profile_image': profile_image_url,
+                'unique_qr_id': unique_qr_id,
+                'country': user.country,
+                'state': user.state,
+                'postal_code': user.postal_code,
+                'outlet_details': outlet_details,
+            }
+
             return Response({
                 'token': token,
                 'message': 'Login Successful',
-                'user': {
-                    'id': str(user.id),
-                    'email': user.email,
-                    'name': user.name,
-                    'role': user.role,
-                    'phone': user.phone,
-                    'profile_image': profile_image_url,
-                    'unique_qr_id': unique_qr_id,
-                    'outlet_details': outlet_details,
-                },
+                'user': user_data,
                 'about': self.ABOUT_INFO,
                 'faqs': self.DEFAULT_FAQS
             }, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-###########################################################################################################################################################
-#############################################################################################################################################################
+
+##############################################################################################################################################################
+# ✅ User Profile View (for logged-in user)
+##############################################################################################################################################################
 class UserProfileView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         serializer = UserProfileSerializer(request.user)
         return Response(serializer.data, status=status.HTTP_200_OK)
-#############################################################################################################################################################
-################################################################################################################################################################
+
+##############################################################################################################################################################
+# ✅ User Search View (unchanged)
+##############################################################################################################################################################
 class UserSearchView(APIView):
-    """
-    View for searching users based on role and other criteria
-    """
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        """
-        Search users by role, name, or email
-        Query parameters:
-        - role: filter by specific role
-        - search: search in name and email fields
-        - phone: filter by phone number (optional)
-        """
-        # Get query parameters
         role = request.query_params.get('role', None)
         search = request.query_params.get('search', None)
         phone = request.query_params.get('phone', None)
-        
-        # Start with all users
+
         users = User.objects.all()
-        
-        # Apply role filter
+
         if role:
             users = users.filter(role__iexact=role)
-        
-        # Apply search filter (name and email)
         if search:
-            users = users.filter(
-                Q(name__icontains=search) |
-                Q(email__icontains=search)
-            )
-        
-        # Apply phone filter if needed
+            users = users.filter(Q(name__icontains=search) | Q(email__icontains=search))
         if phone:
             users = users.filter(phone__icontains=phone)
-        
-        # Serialize results
+
         serializer = UserListSerializer(users, many=True)
-        
         return Response({
             'count': users.count(),
             'users': serializer.data
@@ -381,6 +369,7 @@ class MyQRAPIView(APIView):
 ##############################################################################################################################################################################
 def My_Home(request):
     return render(request,"index.html")
+
 
 
 
