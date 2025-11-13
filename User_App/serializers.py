@@ -5,54 +5,65 @@ from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.utils.encoding import force_str
 from django.utils.http import urlsafe_base64_decode
 from .models import QRScan, CustomerPoints
-############################################################################################################################
+#####################################################################################################################################################################################################
 from Merchants_App.models import Outlet    #########new update for login
 ###############################################################
 ###new Updated###############################
-############################################################################################################################
+####################################################################################################################################################################################################
 class UserRegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(
-        write_only=True, 
+        write_only=True,
         required=True,
         style={'input_type': 'password'},
         error_messages={'required': 'This field is required.'}
     )
     password2 = serializers.CharField(
-        write_only=True, 
+        write_only=True,
         required=True,
         style={'input_type': 'password'},
         error_messages={'required': 'This field is required.'}
     )
+
     class Meta:
         model = User
-        fields = ['email', 'name', 'tc', 'password', 'password2', 'role', 'phone', 'profile_image']
+        fields = [
+            'email', 'name', 'tc', 'password', 'password2', 'role', 'phone', 'profile_image',
+            # ✅ New Fields
+            'country', 'state', 'postal_code',
+        ]
         extra_kwargs = {
             'email': {'required': True, 'error_messages': {'required': 'This field is required.'}},
             'name': {'required': True, 'error_messages': {'required': 'This field is required.'}},
             'tc': {'required': True, 'error_messages': {'required': 'This field is required.'}},
             'role': {'required': True, 'error_messages': {'required': 'This field is required.'}},
             'phone': {'required': True, 'error_messages': {'required': 'This field is required.'}},
-            'profile_image': {'required': True, 'error_messages': {'required': 'This field is required.'}},
+            'profile_image': {'required': False},  # made optional
+            'country': {'required': False},
+            'state': {'required': False},
+            'postal_code': {'required': False},
         }
+
     def validate(self, attrs):
         # Check if passwords match
         if attrs['password'] != attrs['password2']:
             raise serializers.ValidationError({"password": "Password fields didn't match."})
-        
+
         # Check if email already exists
         if User.objects.filter(email=attrs['email']).exists():
             raise serializers.ValidationError({"email": "User with this email already exists."})
-        
+
         # Check if phone already exists
         if User.objects.filter(phone=attrs['phone']).exists():
             raise serializers.ValidationError({"phone": "User with this phone number already exists."})
-        
+
         return attrs
 
     def create(self, validated_data):
         validated_data.pop('password2')
         return User.objects.create_user(**validated_data)
+
 ############################################################################################################################
+# ✅ User Login Serializer
 ############################################################################################################################
 class UserLoginSerializer(serializers.Serializer):
     email = serializers.EmailField(
@@ -76,25 +87,36 @@ class UserLoginSerializer(serializers.Serializer):
                 raise serializers.ValidationError('Invalid email or password')
         else:
             raise serializers.ValidationError('Must include "email" and "password"')
-        
+
         attrs['user'] = user
         return attrs
+
 ############################################################################################################################
+# ✅ User Profile Serializer
 ############################################################################################################################
 class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'email', 'name', 'role', 'phone', 'profile_image', 'tc', 'created_at', 'updated_at']
+        fields = [
+            'id', 'email', 'name', 'role', 'phone', 'profile_image',
+            'country', 'state', 'postal_code',  # ✅ Added new fields
+            'tc', 'created_at', 'updated_at'
+        ]
 
-###############################################################################################################################
-###############################################################################################################################
+############################################################################################################################
+# ✅ User List Serializer
+############################################################################################################################
 class UserListSerializer(serializers.ModelSerializer):
     """
-    Serializer for listing users (might want to exclude sensitive fields like tc)
+    Serializer for listing users (excludes sensitive fields like password/tc)
     """
     class Meta:
         model = User
-        fields = ['id', 'email', 'name', 'role', 'phone', 'profile_image', 'created_at','updated_at']
+        fields = [
+            'id', 'email', 'name', 'role', 'phone', 'profile_image',
+            'country', 'state', 'postal_code',  # ✅ Added new fields
+            'created_at', 'updated_at'
+        ]
 ###############################################################################################################################
 ################################################################################################################################
 class ForgotPasswordSerializer(serializers.Serializer):
@@ -237,6 +259,7 @@ class MyQRSerializer(serializers.Serializer):
     qr_code = serializers.CharField()
 ##########################################################################################################################################################
 ##########################################################################################################################################################
+
 
 
 
