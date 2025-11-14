@@ -67,16 +67,24 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 
 # ── Database configuration ─────────────────────────────────────
 # ── Database configuration ─────────────────────────────────────
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.postgresql',
+#         'NAME': 'my_customer_layalty_mobile_app_db',
+#         'USER': 'my_customer_layalty_mobile_app_db_user',
+#         'PASSWORD': 'kd3N2IZieSU7C1xgzTGHMo6IKmeI5l3q',
+#         'HOST': 'dpg-d4b9d2idbo4c738lvun0-a.oregon-postgres.render.com',
+#         'PORT': '5432',
+#     }
+# }
+# ── Database configuration ─────────────────────────────────────
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'my_customer_layalty_mobile_app_db',
-        'USER': 'my_customer_layalty_mobile_app_db_user',
-        'PASSWORD': 'kd3N2IZieSU7C1xgzTGHMo6IKmeI5l3q',
-        'HOST': 'dpg-d4b9d2idbo4c738lvun0-a.oregon-postgres.render.com',
-        'PORT': '5432',
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / "db.sqlite3",
     }
 }
+
 
 
 AUTH_USER_MODEL = 'User_App.User'
@@ -148,6 +156,7 @@ EMAIL_HOST_PASSWORD = 'ykccfowsacybvitt'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 FRONTEND_URL = 'http://127.0.0.1:8000/api/user/'  # Update with your frontend URL
+
 
 
 
