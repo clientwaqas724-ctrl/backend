@@ -70,10 +70,10 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'customer_layalty_mobile_appdb',
-        'USER': 'customer_layalty_mobile_appdb_user',
-        'PASSWORD': 'ykIkrE9pgPQQJahZoqVhoaAWPLN0TTFX',
-        'HOST': 'dpg-d4atheer433s738ijau0-a.oregon-postgres.render.com',
+        'NAME': 'my_customer_layalty_mobile_app_db',
+        'USER': 'my_customer_layalty_mobile_app_db_user',
+        'PASSWORD': 'kd3N2IZieSU7C1xgzTGHMo6IKmeI5l3q',
+        'HOST': 'dpg-d4b9d2idbo4c738lvun0-a.oregon-postgres.render.com',
         'PORT': '5432',
     }
 }
@@ -148,6 +148,7 @@ EMAIL_HOST_PASSWORD = 'ykccfowsacybvitt'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 FRONTEND_URL = 'http://127.0.0.1:8000/api/user/'  # Update with your frontend URL
+
 
 
 
