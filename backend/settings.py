@@ -156,3 +156,4 @@ FRONTEND_URL = 'http://127.0.0.1:8000/api/user/'  # Update with your frontend UR
 
 
 
+
