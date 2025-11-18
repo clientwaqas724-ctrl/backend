@@ -581,7 +581,7 @@ class CustomerCouponsView(APIView):
     GET /api/customer/coupons/
     Returns:
       - available_coupons (active and not expired)
-      - redeemed_coupons (from user activity)
+      - redeemed_coupons (from transactions)
     """
     permission_classes = [IsAuthenticated]
 
@@ -589,23 +589,62 @@ class CustomerCouponsView(APIView):
         user = request.user
         today = timezone.now().date()
 
-        # ✅ Available coupons (active and not expired)
+        # ================================
+        # ✅ Available coupons (active & not expired)
+        # ================================
         available_coupons = Coupon.objects.filter(
             status=Coupon.STATUS_ACTIVE,
             expiry_date__gte=today
+        ).order_by('-created_at')
+
+        available_coupons_data = []
+        for coupon in available_coupons:
+            available_coupons_data.append({
+                "id": str(coupon.id),
+                "merchant": str(coupon.merchant.id),
+                "merchant_name": coupon.merchant.company_name,
+                "title": coupon.title,
+                "description": coupon.description,
+                "image": coupon.image.url if coupon.image else None,
+                "image_url": coupon.image_url,
+                "points_required": coupon.points_required,
+                "start_date": coupon.start_date,
+                "expiry_date": coupon.expiry_date,
+                "terms_and_conditions_text": coupon.terms_and_conditions_text,
+                "code": coupon.code,
+                "status": coupon.status,
+                "created_at": coupon.created_at,
+            })
+
+        # ================================
+        # ✅ Redeemed coupons (via Transaction)
+        # ================================
+        redeemed_transactions = (
+            Transaction.objects.filter(
+                user=user,
+                coupon__isnull=False,
+                points__lt=0  # redeemed
+            )
+            .select_related('coupon', 'coupon__merchant')
+            .order_by('-created_at')
         )
 
-        available_coupons_data = CouponSerializer(available_coupons, many=True).data
+        redeemed_coupons_data = []
+        for tx in redeemed_transactions:
+            coupon = tx.coupon
+            redeemed_coupons_data.append({
+                "id": str(coupon.id),
+                "title": coupon.title,
+                "code": coupon.code,
+                "merchant_name": coupon.merchant.company_name,
+                "redeemed_date": tx.created_at,
+                "status": "redeemed",
+                "points_used": abs(tx.points),
+            })
 
-        # ✅ Redeemed coupons (based on UserActivity)
-        redeemed_activities = UserActivity.objects.filter(
-            user=user,
-            activity_type='redeem_coupon'
-        ).select_related('related_coupon').order_by('-activity_date')
-
-        redeemed_coupons_data = RedeemedCouponSerializer(redeemed_activities, many=True).data
-
+        # ================================
         # ✅ Final response
+        # ================================
         return Response(
             {
                 "available_coupons": available_coupons_data,
@@ -865,6 +904,7 @@ class MerchantScanQRAPIView(APIView):
             },
             status=status.HTTP_200_OK
         )
+
 
 
 
