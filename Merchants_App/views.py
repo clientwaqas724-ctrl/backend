@@ -357,9 +357,9 @@ class CustomerHomeViewSet(viewsets.ViewSet):
     Returns dashboard data for a customer user:
       - User info (points, tier)
       - Active promotions
-      - Available coupons with merchant details
+      - Available coupons
       - Recent activity (real or randomized)
-      - Merchant scanning history
+      - Merchant Scanning History (NEW)
     """
     permission_classes = [IsAuthenticated]
 
@@ -374,184 +374,104 @@ class CustomerHomeViewSet(viewsets.ViewSet):
                 "message": "Access denied. Only customers can view this dashboard."
             }, status=status.HTTP_403_FORBIDDEN)
 
-        # --- USER INFO ---
-        total_points = Transaction.objects.filter(user=user).aggregate(total=Sum('points')).get('total') or 0
+        # ======================================================
+        # USER INFO
+        # ======================================================
+        total_points = Transaction.objects.filter(user=user).aggregate(
+            total=Sum('points')
+        ).get('total') or 0
+
         user_points = UserPoints.objects.filter(user=user).select_related('tier').first()
         tier = user_points.tier.name if user_points and user_points.tier else None
 
-        # --- PROMOTIONS & COUPONS ---
-        # Get active promotions with merchant details
-        promotions = Promotion.objects.filter(
-            end_date__gte=today
-        ).select_related('merchant')[:10]  # Limit to 10 promotions
-        
-        # Get available coupons with merchant and outlet details
-        coupons = Coupon.objects.filter(
-            status=Coupon.STATUS_ACTIVE,
-            expiry_date__gte=today
-        ).select_related('merchant', 'outlet')[:20]  # Limit to 20 coupons
+        # ======================================================
+        # PROMOTIONS & COUPONS
+        # ======================================================
+        promotions = Promotion.objects.all()
+        coupons = Coupon.objects.filter(status=Coupon.STATUS_ACTIVE)
 
-        # --- RECENT ACTIVITY ---
-        activities = UserActivity.objects.filter(user=user).select_related('related_coupon').order_by('-activity_date')[:10]
+        # ======================================================
+        # RECENT ACTIVITY
+        # ======================================================
+        activities = UserActivity.objects.filter(user=user).order_by('-activity_date')[:5]
 
         if activities.exists():
-            # ✅ If user already has real activity
             recent_activity_data = UserActivitySerializer(activities, many=True).data
         else:
-            # ⚙️ No real activity → Generate random sample from recent Transactions
-            transactions = Transaction.objects.filter(user=user).select_related('merchant', 'coupon').order_by('-created_at')[:5]
+            transactions = Transaction.objects.filter(user=user).order_by('-created_at')[:5]
+            import random
+            ACTIVITY_TYPES = ["Earned", "Redeemed", "Expired"]
 
             if transactions.exists():
                 random_activity_data = []
-                import random
-
-                ACTIVITY_TYPES = ["Earned", "Redeemed", "Expired"]
-
                 for tx in transactions:
-                    # Randomly choose an activity type
-                    activity_type = random.choice(ACTIVITY_TYPES)
-                    
-                    # Create activity description based on transaction
-                    if tx.coupon:
-                        description = f"{activity_type} points via {tx.coupon.title}"
-                    elif tx.merchant:
-                        description = f"{activity_type} points at {tx.merchant.company_name}"
-                    else:
-                        description = f"{activity_type} {abs(tx.points)} points"
-
+                    act = random.choice(ACTIVITY_TYPES)
                     random_activity_data.append({
-                        "activity_type": activity_type,
+                        "activity_type": act,
                         "points": tx.points,
-                        "description": description,
-                        "activity_date": tx.created_at,
-                        "related_coupon": tx.coupon.id if tx.coupon else None
+                        "description": f"{user.email} {act.lower()} {abs(tx.points)} points",
+                        "activity_date": tx.created_at
                     })
                 recent_activity_data = random_activity_data
             else:
-                # No transactions either → default random placeholder data
-                import random
-                ACTIVITY_TYPES = ["Earned", "Redeemed", "Expired"]
                 recent_activity_data = [
                     {
                         "activity_type": act,
                         "points": random.randint(5, 50),
-                        "description": f"{act.lower()} some points",
-                        "activity_date": timezone.now() - timedelta(days=random.randint(1, 30))
+                        "description": f"{user.email} {act.lower()} points",
+                        "activity_date": timezone.now()
                     }
-                    for act in random.sample(ACTIVITY_TYPES, min(3, len(ACTIVITY_TYPES)))
+                    for act in ACTIVITY_TYPES
                 ]
 
-        # --- MERCHANT SCANNING HISTORY ---
-        # Get recent QR scans and transactions for this customer
-        recent_scans = QRScan.objects.filter(customer=user).order_by('-scan_date')[:10]
-        
-        # Get transactions with merchant and outlet details
-        recent_transactions = Transaction.objects.filter(
-            user=user
-        ).select_related('merchant', 'outlet', 'coupon').order_by('-created_at')[:10]
+        # ======================================================
+        # ⭐ NEW – MERCHANT SCANNING HISTORY
+        # ======================================================
+        scan_history = Transaction.objects.filter(user=user).select_related(
+            'merchant', 'outlet', 'coupon'
+        ).order_by('-created_at')
 
-        scanning_history = []
-        
-        # Combine QR scans and transactions
-        for scan in recent_scans:
-            scanning_history.append({
-                "type": "qr_scan",
-                "date": scan.scan_date,
-                "points": scan.points_awarded,
-                "description": f"QR Code scanned at merchant",
-                "merchant": getattr(scan.merchant, 'company_name', 'Unknown Merchant') if hasattr(scan, 'merchant') else 'Unknown Merchant',
-                "status": "success"
+        scanning_history_output = []
+        for tx in scan_history:
+            scanning_history_output.append({
+                "transaction_id": str(tx.id),
+                "points": tx.points,
+                "date": tx.created_at,
+                "merchant": {
+                    "id": str(tx.merchant.id),
+                    "name": tx.merchant.company_name,
+                    "logo_url": tx.merchant.logo_url
+                } if tx.merchant else None,
+                "outlet": {
+                    "id": str(tx.outlet.id),
+                    "name": tx.outlet.name,
+                    "image_url": tx.outlet.outlet_image_url if tx.outlet else None
+                } if tx.outlet else None,
+                "coupon": {
+                    "id": str(tx.coupon.id),
+                    "title": tx.coupon.title,
+                    "image_url": tx.coupon.image_url
+                } if tx.coupon else None
             })
 
-        for txn in recent_transactions:
-            transaction_type = "redemption" if txn.points < 0 else "earned"
-            scanning_history.append({
-                "type": "transaction",
-                "date": txn.created_at,
-                "points": txn.points,
-                "description": f"Points {transaction_type} at {txn.merchant.company_name if txn.merchant else 'Merchant'}",
-                "merchant": txn.merchant.company_name if txn.merchant else 'Unknown Merchant',
-                "outlet": txn.outlet.name if txn.outlet else None,
-                "coupon": txn.coupon.title if txn.coupon else None,
-                "status": "completed"
-            })
-
-        # Sort by date and take latest 10
-        scanning_history.sort(key=lambda x: x['date'], reverse=True)
-        scanning_history = scanning_history[:10]
-
-        # --- ENHANCED COUPON DATA WITH IMAGES ---
-        enhanced_coupons = []
-        for coupon in coupons:
-            coupon_data = CouponSerializer(coupon).data
-            
-            # Add merchant details with image
-            merchant_data = {
-                "id": str(coupon.merchant.id),
-                "company_name": coupon.merchant.company_name,
-                "logo_url": coupon.merchant.logo_url,
-                "status": coupon.merchant.status
-            }
-            
-            # Add outlet details with images if available
-            outlet_data = None
-            if coupon.outlet:
-                outlet_data = {
-                    "id": str(coupon.outlet.id),
-                    "name": coupon.outlet.name,
-                    "address": coupon.outlet.address,
-                    "city": coupon.outlet.city,
-                    "state": coupon.outlet.state,
-                    "outlet_image": coupon.outlet.outlet_image.url if coupon.outlet.outlet_image else None,
-                    "outlet_image_url": coupon.outlet.outlet_image_url
-                }
-            
-            enhanced_coupons.append({
-                **coupon_data,
-                "merchant_details": merchant_data,
-                "outlet_details": outlet_data,
-                "available_outlets": OutletSerializer(
-                    coupon.merchant.outlets.all()[:3], 
-                    many=True
-                ).data if coupon.merchant else []
-            })
-
-        # --- ENHANCED PROMOTION DATA ---
-        enhanced_promotions = []
-        for promotion in promotions:
-            promo_data = PromotionSerializer(promotion).data
-            
-            # Add merchant details
-            merchant_data = {
-                "id": str(promotion.merchant.id),
-                "company_name": promotion.merchant.company_name,
-                "logo_url": promotion.merchant.logo_url
-            }
-            
-            enhanced_promotions.append({
-                **promo_data,
-                "merchant_details": merchant_data
-            })
-
-        # --- RESPONSE PAYLOAD ---
+        # ======================================================
+        # RESPONSE PAYLOAD
+        # ======================================================
         data = {
             "user": {
                 "id": str(user.id),
-                "email": getattr(user, "email", None),
-                "name": getattr(user, "name", None),
-                "role": getattr(user, "role", None),
+                "email": user.email,
+                "name": user.name,
+                "role": user.role,
                 "total_points": total_points,
                 "tier": tier,
-                "user_points_details": UserPointsSerializer(user_points).data if user_points else None
             },
-            "promotions": enhanced_promotions,
-            "available_coupons": enhanced_coupons,
+            "promotions": PromotionSerializer(promotions, many=True).data,
+            "available_coupons": CouponSerializer(coupons, many=True).data,
             "recent_activity": recent_activity_data,
-            "scanning_history": scanning_history,
-            "nearby_merchants": MerchantSerializer(
-                Merchant.objects.filter(status='active')[:5], 
-                many=True
-            ).data
+
+            # ⭐ NEW FIELD
+            "merchant_scanning_history": scanning_history_output
         }
 
         return Response({
@@ -770,21 +690,21 @@ class CustomerCouponsView(APIView):
 class MerchantDashboardAnalyticsView(APIView):
     """
     GET /api/merchant/dashboard-analytics/
-    Combines merchant dashboard summary + detailed analytics with images.
+    Combines merchant dashboard summary + detailed analytics + merchant scanning history.
     """
     permission_classes = [IsAuthenticated]
 
     def get(self, request, *args, **kwargs):
         user = request.user
 
-        # ✅ 1. Check if user is merchant
+        # 1. Check if merchant
         if user.role != User.MERCHANT:
             return Response(
                 {"success": False, "message": "Access denied. User is not a merchant."},
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        # ✅ 2. Get merchant object
+        # 2. Get merchant object
         try:
             merchant = Merchant.objects.get(user=user)
         except Merchant.DoesNotExist:
@@ -800,7 +720,7 @@ class MerchantDashboardAnalyticsView(APIView):
         start_of_week = today - timedelta(days=today.weekday())
         start_of_month = today.replace(day=1)
 
-        # ✅ 3. Merchant Basic Info
+        # 3. Merchant Info Stats
         total_outlets = merchant.outlets.count()
         total_coupons = Coupon.objects.filter(merchant=merchant).count()
         active_coupons = Coupon.objects.filter(
@@ -810,7 +730,7 @@ class MerchantDashboardAnalyticsView(APIView):
         ).count()
         total_promotions = Promotion.objects.filter(merchant=merchant).count()
 
-        # ✅ 4. Transaction Statistics
+        # 4. Merchant Transactions
         merchant_txns = Transaction.objects.filter(merchant=merchant)
 
         total_customers = merchant_txns.values('user').distinct().count()
@@ -825,124 +745,63 @@ class MerchantDashboardAnalyticsView(APIView):
         weekly_scans = merchant_txns.filter(created_at__date__gte=start_of_week).count()
         monthly_scans = merchant_txns.filter(created_at__date__gte=start_of_month).count()
 
-        # ✅ 5. Recent Transactions with Enhanced Data
-        recent_txns = merchant_txns.select_related('user', 'outlet', 'coupon').order_by('-created_at')[:10]
+        # 5. Recent Transactions
+        recent_txns = merchant_txns.select_related('user', 'outlet', 'coupon').order_by('-created_at')[:5]
         recent_transactions = []
         for txn in recent_txns:
             transaction_type = "redeem" if txn.points < 0 else "earn"
-            
-            # Get customer image if available
-            customer_image = None
-            if hasattr(txn.user, 'profile_image') and txn.user.profile_image:
-                customer_image = txn.user.profile_image.url
-            elif hasattr(txn.user, 'avatar_url'):
-                customer_image = txn.user.avatar_url
-                
-            # Get outlet images
-            outlet_images = []
-            if txn.outlet:
-                if txn.outlet.outlet_image:
-                    outlet_images.append(txn.outlet.outlet_image.url)
-                if txn.outlet.outlet_image_url:
-                    outlet_images.append(txn.outlet.outlet_image_url)
-                    
-            # Get coupon images
-            coupon_images = []
-            if txn.coupon:
-                if txn.coupon.image:
-                    coupon_images.append(txn.coupon.image.url)
-                if txn.coupon.image_url:
-                    coupon_images.append(txn.coupon.image_url)
-
             recent_transactions.append({
                 "id": str(txn.id),
                 "customer_name": txn.user.name or txn.user.email.split('@')[0],
-                "customer_email": txn.user.email,
                 "customer_id": str(txn.user.id),
-                "customer_image": customer_image,
-                "points": abs(txn.points),
+                "points": txn.points,
                 "transaction_type": transaction_type,
                 "outlet_name": txn.outlet.name if txn.outlet else "N/A",
                 "outlet_id": str(txn.outlet.id) if txn.outlet else None,
-                "outlet_images": outlet_images,
                 "coupon_title": txn.coupon.title if txn.coupon else None,
-                "coupon_id": str(txn.coupon.id) if txn.coupon else None,
-                "coupon_images": coupon_images,
                 "timestamp": txn.created_at.isoformat(),
                 "location": f"{txn.outlet.city}, {txn.outlet.state}" if txn.outlet else "N/A",
-                "qr_code_used": f"user:{txn.user.id}"  # Simulated QR code format
             })
 
-        # ✅ 6. Active Outlets Summary with Images
+        # 6. Active Outlets
         active_outlets = []
-        for outlet in merchant.outlets.all()[:10]:  # Increased limit to 10
+        for outlet in merchant.outlets.all()[:5]:
             outlet_txns = merchant_txns.filter(outlet=outlet)
             outlet_scans_today = outlet_txns.filter(created_at__gte=start_of_day).count()
             outlet_customers = outlet_txns.values('user').distinct().count()
-            
-            # Get outlet images
-            outlet_images = []
-            if outlet.outlet_image:
-                outlet_images.append(outlet.outlet_image.url)
-            if outlet.outlet_image_url:
-                outlet_images.append(outlet.outlet_image_url)
 
             active_outlets.append({
                 "id": str(outlet.id),
                 "name": outlet.name,
-                "address": outlet.address,
-                "city": outlet.city,
-                "state": outlet.state,
-                "country": outlet.country,
                 "location": f"{outlet.city}, {outlet.state}",
-                "contact_number": outlet.contact_number,
                 "is_active": True,
                 "scans_today": outlet_scans_today,
-                "total_customers": outlet_customers,
-                "images": outlet_images,
-                "latitude": outlet.latitude,
-                "longitude": outlet.longitude
+                "total_customers": outlet_customers
             })
 
-        # ✅ 7. Popular Coupons with Images (top 5 by redemption count)
+        # 7. Popular Coupons
         popular_coupons = Coupon.objects.filter(
-            merchant=merchant
+            merchant=merchant,
+            loyalty_transactions__points__lt=0
         ).annotate(
             redemption_count=Count('loyalty_transactions')
-        ).order_by('-redemption_count')[:5]
+        ).order_by('-redemption_count')[:3]
 
-        popular_coupons_data = []
-        for c in popular_coupons:
-            coupon_images = []
-            if c.image:
-                coupon_images.append(c.image.url)
-            if c.image_url:
-                coupon_images.append(c.image_url)
-                
-            popular_coupons_data.append({
-                "id": str(c.id),
-                "title": c.title,
-                "description": c.description,
-                "redemption_count": c.redemption_count,
-                "points_required": c.points_required,
-                "start_date": c.start_date,
-                "expiry_date": c.expiry_date,
-                "code": c.code,
-                "status": c.status,
-                "images": coupon_images,
-                "terms_and_conditions": c.terms_and_conditions_text,
-                "merchant_name": c.merchant.company_name
-            })
+        popular_coupons_data = [{
+            "id": str(c.id),
+            "title": c.title,
+            "redemption_count": c.redemption_count,
+            "points_required": c.points_required
+        } for c in popular_coupons]
 
-        # ✅ 8. Merchant Scanning Analytics
-        # QR Scan analytics
-        qr_scans = QRScan.objects.filter(merchant=merchant) if hasattr(QRScan, 'merchant') else QRScan.objects.none()
-        
-        # Daily transaction stats (last 7 days)
+        # 8. Analytics
+        today = timezone.now().date()
+        qr_scans = merchant_txns
+
         daily_scans = []
         for i in range(6, -1, -1):
             date = today - timedelta(days=i)
-            scans_count = merchant_txns.filter(created_at__date=date).count()
+            scans_count = qr_scans.filter(created_at__date=date).count()
             daily_scans.append({
                 "date": date.isoformat(),
                 "transactions": scans_count
@@ -952,7 +811,7 @@ class MerchantDashboardAnalyticsView(APIView):
         customer_growth = []
         for i in range(6, -1, -1):
             date = today - timedelta(days=i)
-            customers_count = merchant_txns.filter(
+            customers_count = qr_scans.filter(
                 created_at__date__lte=date
             ).values('user').distinct().count()
             customer_growth.append({
@@ -960,31 +819,24 @@ class MerchantDashboardAnalyticsView(APIView):
                 "customers": customers_count
             })
 
-        # Points distribution
-        total_txns = merchant_txns.count()
-        total_points = merchant_txns.aggregate(total=Sum('points'))['total'] or 0
+        # Points analytics
+        total_txns = qr_scans.count()
+        total_points = qr_scans.aggregate(total=Sum('points'))['total'] or 0
         avg_points = total_points / total_txns if total_txns > 0 else 0
 
-        # ✅ 9. Merchant Info Summary with Images
+        # 9. Merchant Info
         merchant_info = {
             "id": str(merchant.id),
             "business_name": merchant.company_name,
-            "logo_url": merchant.logo_url,
-            "status": merchant.status,
             "total_outlets": total_outlets,
             "total_coupons": total_coupons,
             "active_coupons": active_coupons,
             "total_promotions": total_promotions,
             "total_customers": total_customers,
             "member_since": merchant.created_at.date(),
-            "user_details": {
-                "user_id": str(user.id),
-                "email": user.email,
-                "name": user.name
-            }
         }
 
-        # ✅ 10. Today's Stats Summary
+        # 10. Today's Stats
         today_stats = {
             "transactions_today": scans_today,
             "points_awarded_today": points_awarded_today,
@@ -992,27 +844,47 @@ class MerchantDashboardAnalyticsView(APIView):
             "weekly_transactions": weekly_scans,
             "monthly_transactions": monthly_scans,
             "revenue_impact": f"${points_awarded_today * 2.5:,.0f}",
-            "avg_points_per_customer": round(points_awarded_today / max(scans_today, 1), 2)
         }
 
-        # ✅ 11. Scanning Performance Metrics
-        scanning_metrics = {
-            "total_qr_scans": qr_scans.count() if hasattr(QRScan, 'merchant') else scans_today,
-            "successful_scans": scans_today,
-            "failed_scans": 0,  # You might want to track this
-            "scan_success_rate": "100%",
-            "average_scan_value": round(avg_points, 2),
-            "top_scanning_outlet": active_outlets[0]['name'] if active_outlets else "N/A"
-        }
+        # ------------------------------------------------------------
+        # ⭐ NEW SECTION — MERCHANT SCANNING HISTORY
+        # ------------------------------------------------------------
+        merchant_scans = Transaction.objects.filter(
+            merchant=merchant
+        ).select_related('user', 'outlet', 'coupon').order_by('-created_at')
 
-        # ✅ 12. Final Combined Response
+        scan_history_output = []
+        for tx in merchant_scans:
+            scan_history_output.append({
+                "transaction_id": str(tx.id),
+                "customer": {
+                    "id": str(tx.user.id),
+                    "name": tx.user.name or tx.user.email,
+                    "email": tx.user.email
+                },
+                "points": tx.points,
+                "created_at": tx.created_at,
+                "outlet": {
+                    "id": str(tx.outlet.id),
+                    "name": tx.outlet.name,
+                    "image_url": tx.outlet.outlet_image_url
+                } if tx.outlet else None,
+                "coupon": {
+                    "id": str(tx.coupon.id),
+                    "title": tx.coupon.title,
+                    "image_url": tx.coupon.image_url
+                } if tx.coupon else None
+            })
+
+        # ------------------------------------------------------------
+
+        # 11. Final Response
         return Response({
             "success": True,
             "message": "Merchant dashboard & analytics retrieved successfully",
             "data": {
                 "merchant_info": merchant_info,
                 "today_stats": today_stats,
-                "scanning_metrics": scanning_metrics,
                 "recent_transactions": recent_transactions,
                 "active_outlets": active_outlets,
                 "popular_coupons": popular_coupons_data,
@@ -1027,10 +899,12 @@ class MerchantDashboardAnalyticsView(APIView):
                     "performance_metrics": {
                         "customer_retention_rate": "85%",
                         "average_redemption_value": "45",
-                        "top_performing_outlet": active_outlets[0]['name'] if active_outlets else "N/A",
-                        "scan_conversion_rate": "92%"
+                        "top_performing_outlet": merchant.outlets.first().name if merchant.outlets.exists() else "N/A"
                     }
-                }
+                },
+
+                # ⭐ NEW OUTPUT ADDED HERE
+                "merchant_scanning_history": scan_history_output
             }
         }, status=status.HTTP_200_OK)
 ##########################################################################################################################################################################################################
@@ -1119,5 +993,6 @@ class MerchantScanQRAPIView(APIView):
             },
             status=status.HTTP_200_OK
         )
+
 
 
