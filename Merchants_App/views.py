@@ -484,8 +484,8 @@ class CustomerHomeViewSet(viewsets.ViewSet):
 class RedeemCouponView(APIView):
     """
     POST /api/redeem-coupon/
-    Allows a user to redeem a coupon using their available points and total transaction history.
-    Prevents duplicate redemption and accurately deducts from total combined balance.
+    Redeem a coupon using user's points.
+    Handles active/expired/used status and logs transactions and user activity.
     """
     permission_classes = [IsAuthenticated]
 
@@ -493,92 +493,61 @@ class RedeemCouponView(APIView):
         user = request.user
         coupon_id = request.data.get("coupon_id")
 
-        # ✅ 1. Validate coupon_id
+        # 1. Validate coupon_id
         if not coupon_id:
             return Response(
                 {"success": False, "message": "coupon_id is required."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # ✅ 2. Get coupon
+        # 2. Get coupon
         coupon = get_object_or_404(Coupon, id=coupon_id)
 
-        # ✅ 3. Validate coupon
-        if coupon.status != Coupon.STATUS_ACTIVE:
+        # 3. Check coupon status
+        if coupon.status == Coupon.STATUS_USED:
             return Response(
-                {"success": False, "message": "This coupon is not active."},
+                {"success": False, "message": "This coupon has already been redeemed."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        if coupon.status != Coupon.STATUS_ACTIVE:
+            return Response(
+                {"success": False, "message": f"This coupon is not active (status: {coupon.status})."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 4. Check expiry
         if coupon.expiry_date < timezone.now().date():
+            coupon.status = Coupon.STATUS_EXPIRED
+            coupon.save(update_fields=['status'])
             return Response(
                 {"success": False, "message": "This coupon has expired."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # ✅ 4. Get user's current points record
-        user_points, _ = UserPoints.objects.get_or_create(
-            user=user, defaults={"total_points": 0}
-        )
+        # 5. Get user's current points
+        user_points, _ = UserPoints.objects.get_or_create(user=user, defaults={"total_points": 0})
 
-        # ✅ 5. Calculate total earned/redeemed from Transaction model
-        total_earned = (
-            Transaction.objects.filter(user=user, points__gt=0)
-            .aggregate(total=Sum("points"))
-            .get("total") or 0
-        )
-        total_redeemed = (
-            Transaction.objects.filter(user=user, points__lt=0)
-            .aggregate(total=Sum("points"))
-            .get("total") or 0
-        )
-        transaction_net_points = total_earned + total_redeemed  # redeemed negative
-
-        # ✅ 6. Combined available points before redemption
-        total_available_points = user_points.total_points + transaction_net_points
-
-        # ✅ 7. Check if coupon already redeemed
-        already_redeemed = Transaction.objects.filter(
-            user=user,
-            coupon=coupon,
-            points__lt=0
-        ).exists()
-
-        if already_redeemed:
-            return Response(
-                {
-                    "success": False,
-                    "message": f"You have already redeemed this coupon: {coupon.title}",
-                    "data": {
-                        "coupon": {"id": str(coupon.id), "title": coupon.title},
-                        "remaining_points": total_available_points,
-                    },
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # ✅ 8. Check if user has enough total points
-        if total_available_points < coupon.points_required:
+        # 6. Check if user has enough points
+        if user_points.total_points < coupon.points_required:
             return Response(
                 {
                     "success": False,
                     "message": (
                         f"Not enough points. You need {coupon.points_required}, "
-                        f"but you only have {total_available_points}."
+                        f"but you only have {user_points.total_points}."
                     ),
-                    "data": {"remaining_points": total_available_points},
+                    "data": {"remaining_points": user_points.total_points},
                 },
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # ✅ 9. Deduct coupon points from total (combined) balance
-        remaining_points = total_available_points - coupon.points_required
-
-        # Update UserPoints to reflect new correct total
+        # 7. Deduct points
+        remaining_points = user_points.total_points - coupon.points_required
         user_points.total_points = remaining_points
         user_points.save(update_fields=["total_points"])
 
-        # ✅ 10. Log redemption in both tables
+        # 8. Log redemption in Transaction table
         Transaction.objects.create(
             user=user,
             merchant=coupon.merchant,
@@ -586,6 +555,7 @@ class RedeemCouponView(APIView):
             points=-coupon.points_required
         )
 
+        # 9. Log user activity
         UserActivity.objects.create(
             user=user,
             activity_type="redeem_coupon",
@@ -594,13 +564,17 @@ class RedeemCouponView(APIView):
             related_coupon=coupon
         )
 
-        # ✅ 11. Response
+        # 10. Update coupon status to USED
+        coupon.status = Coupon.STATUS_USED
+        coupon.save(update_fields=["status"])
+
+        # 11. Response
         return Response(
             {
                 "success": True,
                 "message": "Coupon redeemed successfully!",
                 "data": {
-                    "coupon": {"id": str(coupon.id), "title": coupon.title},
+                    "coupon": {"id": str(coupon.id), "title": coupon.title, "status": coupon.status},
                     "remaining_points": remaining_points,
                 },
             },
@@ -1040,6 +1014,7 @@ class MerchantScanQRAPIView(APIView):
             },
             status=status.HTTP_200_OK
         )
+
 
 
 
