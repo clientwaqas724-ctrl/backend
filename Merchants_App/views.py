@@ -606,33 +606,57 @@ class RedeemCouponView(APIView):
             },
             status=status.HTTP_200_OK
         )
-##############################################################################################################################################
-##############################################################################################################################################
+##################################################################################################################################################################################################
+#########################################################################################################################################################################################################
 # ============================= CUSTOMER COUPONS LIST API =============================new updated
 class CustomerCouponsView(APIView):
     """
     GET /api/customer/coupons/
-    Returns:
-      - available_coupons (active and not expired)
-      - redeemed_coupons (from transactions)
+    Shows:
+      - available_coupons → ALL coupons (no filter by user)
+      - redeemed_coupons → only user's redeemed coupons
+      - expired_coupons  → optional (still included)
     """
     permission_classes = [IsAuthenticated]
+
+    def get_status_text(self, status_code):
+        """Convert coupon status into readable text."""
+        return {
+            Coupon.STATUS_ACTIVE: "Active",
+            Coupon.STATUS_USED: "Used",
+            Coupon.STATUS_EXPIRED: "Expired",
+            Coupon.STATUS_INACTIVE: "Inactive",
+        }.get(status_code, "Unknown")
 
     def get(self, request, *args, **kwargs):
         user = request.user
         today = timezone.now().date()
 
-        # ================================
-        # ✅ Available coupons (active & not expired)
-        # ================================
-        available_coupons = Coupon.objects.filter(
-            status=Coupon.STATUS_ACTIVE,
-            expiry_date__gte=today
-        ).order_by('-created_at')
+        # ======================================================
+        # 🔄 AUTO-UPDATE EXPIRED COUPONS (only active → expired)
+        # ======================================================
+        Coupon.objects.filter(
+            expiry_date__lt=today,
+            status=Coupon.STATUS_ACTIVE
+        ).update(status=Coupon.STATUS_EXPIRED)
 
-        available_coupons_data = []
-        for coupon in available_coupons:
-            available_coupons_data.append({
+        # ======================================================
+        # 📌 AVAILABLE COUPONS → SHOW **ALL COUPONS**
+        # ======================================================
+        all_coupons = Coupon.objects.all().order_by('-created_at')
+
+        available_coupons = []
+        for coupon in all_coupons:
+            # Real-time status calculation
+            if coupon.expiry_date < today:
+                real_status = Coupon.STATUS_EXPIRED
+            else:
+                real_status = coupon.status
+
+            # Remaining days
+            remaining_days = (coupon.expiry_date - today).days if real_status != Coupon.STATUS_EXPIRED else 0
+
+            available_coupons.append({
                 "id": str(coupon.id),
                 "merchant": str(coupon.merchant.id),
                 "merchant_name": coupon.merchant.company_name,
@@ -643,50 +667,73 @@ class CustomerCouponsView(APIView):
                 "points_required": coupon.points_required,
                 "start_date": coupon.start_date,
                 "expiry_date": coupon.expiry_date,
+                "remaining_days": remaining_days,
                 "terms_and_conditions_text": coupon.terms_and_conditions_text,
                 "code": coupon.code,
-                "status": coupon.status,
+                "status": real_status,
+                "status_text": self.get_status_text(real_status),
                 "created_at": coupon.created_at,
             })
 
-        # ================================
-        # ✅ Redeemed coupons (via Transaction)
-        # ================================
+        # ======================================================
+        # 🎉 USER REDEEMED COUPONS
+        # ======================================================
         redeemed_transactions = (
             Transaction.objects.filter(
                 user=user,
                 coupon__isnull=False,
-                points__lt=0  # redeemed
+                points__lt=0
             )
             .select_related('coupon', 'coupon__merchant')
             .order_by('-created_at')
         )
 
-        redeemed_coupons_data = []
+        redeemed_coupons = []
         for tx in redeemed_transactions:
             coupon = tx.coupon
-            redeemed_coupons_data.append({
+            redeemed_coupons.append({
                 "id": str(coupon.id),
                 "title": coupon.title,
-                "code": coupon.code,
                 "merchant_name": coupon.merchant.company_name,
+                "code": coupon.code,
                 "redeemed_date": tx.created_at,
-                "status": "redeemed",
+                "status": Coupon.STATUS_USED,
+                "status_text": self.get_status_text(Coupon.STATUS_USED),
                 "points_used": abs(tx.points),
             })
 
-        # ================================
-        # ✅ Final response
-        # ================================
+        # ======================================================
+        # ❌ EXPIRED COUPONS
+        # ======================================================
+        expired_qs = Coupon.objects.filter(
+            expiry_date__lt=today
+        ).order_by('-created_at')
+
+        expired_coupons = []
+        for coupon in expired_qs:
+            expired_coupons.append({
+                "id": str(coupon.id),
+                "title": coupon.title,
+                "merchant_name": coupon.merchant.company_name,
+                "code": coupon.code,
+                "expiry_date": coupon.expiry_date,
+                "status": Coupon.STATUS_EXPIRED,
+                "status_text": self.get_status_text(Coupon.STATUS_EXPIRED),
+            })
+
+        # ======================================================
+        # 📌 FINAL RESPONSE
+        # ======================================================
         return Response(
             {
-                "available_coupons": available_coupons_data,
-                "redeemed_coupons": redeemed_coupons_data,
+                "available_coupons": available_coupons,  # NOW ALL COUPONS
+                "redeemed_coupons": redeemed_coupons,
+                "expired_coupons": expired_coupons,
             },
             status=status.HTTP_200_OK
         )
-##############################################################################################################################################
-##############################################################################################################################################
+#######################################################################################################################################################################################################
+############################################################################################################################################################################################################
 class MerchantDashboardAnalyticsView(APIView):
     """
     GET /api/merchant/dashboard-analytics/
@@ -993,6 +1040,7 @@ class MerchantScanQRAPIView(APIView):
             },
             status=status.HTTP_200_OK
         )
+
 
 
 
