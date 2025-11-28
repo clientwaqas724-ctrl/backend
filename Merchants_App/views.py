@@ -372,11 +372,11 @@ class CustomerHomeViewSet(viewsets.ViewSet):
             }, status=status.HTTP_403_FORBIDDEN)
 
         # =============================
-        # ✅ GET USER POINTS (FRESH)
+        # ✅ GET USER POINTS (UPDATED LIVE)
         # =============================
         try:
             user_points_obj = UserPoints.objects.get(user=user)
-            user_points_obj.refresh_from_db()
+            user_points_obj.refresh_from_db()  # ensures latest deduction appears
             total_points = int(user_points_obj.total_points or 0)
             tier_name = user_points_obj.tier.name if user_points_obj.tier else None
         except UserPoints.DoesNotExist:
@@ -390,7 +390,7 @@ class CustomerHomeViewSet(viewsets.ViewSet):
         coupons = Coupon.objects.filter(status=Coupon.STATUS_ACTIVE)
 
         # =============================
-        # ✅ RECENT ACTIVITY (POSITIVE ONLY)
+        # ✅ RECENT ACTIVITY (SHOW ABS POSITIVE ALWAYS)
         # =============================
         activities = UserActivity.objects.filter(user=user).order_by('-activity_date')[:5]
 
@@ -406,7 +406,7 @@ class CustomerHomeViewSet(viewsets.ViewSet):
         ]
 
         # =============================
-        # ✅ SCANNING / TRANSACTIONS (POSITIVE ONLY)
+        # ✅ TRANSACTIONS HISTORY (POSITIVE ONLY)
         # =============================
         scan_history = Transaction.objects.filter(user=user).select_related(
             'merchant', 'outlet', 'coupon'
@@ -418,7 +418,7 @@ class CustomerHomeViewSet(viewsets.ViewSet):
             scanning_history_output.append({
                 "transaction_id": str(tx.id),
                 "transaction_type": "earned" if tx.points > 0 else "redeemed",
-                "points": abs(int(tx.points or 0)),   # ✅ NO NEGATIVE IN UI
+                "points": abs(int(tx.points or 0)),
                 "date": tx.created_at.isoformat() if tx.created_at else None,
                 "merchant": {
                     "id": str(tx.merchant.id),
@@ -437,9 +437,6 @@ class CustomerHomeViewSet(viewsets.ViewSet):
                 } if tx.coupon else None
             })
 
-        # =============================
-        # ✅ FINAL RESPONSE
-        # =============================
         return Response({
             "success": True,
             "message": "Dashboard data retrieved successfully",
@@ -449,7 +446,7 @@ class CustomerHomeViewSet(viewsets.ViewSet):
                     "email": user.email,
                     "name": getattr(user, "name", None),
                     "role": getattr(user, "role", None),
-                    "total_points": total_points,
+                    "total_points": total_points,   # UPDATED CLEAN VALUE
                     "tier": tier_name,
                 },
                 "promotions": PromotionSerializer(promotions, many=True).data,
@@ -458,8 +455,13 @@ class CustomerHomeViewSet(viewsets.ViewSet):
                 "merchant_scanning_history": scanning_history_output
             }
         }, status=status.HTTP_200_OK)
-#####################################################################################################################################################################################################
-###########################################################################################################################################################################################################
+
+
+
+############################################################################################################
+#########################################  REDEEM COUPON  ##################################################
+############################################################################################################
+
 class RedeemCouponView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -475,6 +477,7 @@ class RedeemCouponView(APIView):
 
         coupon = get_object_or_404(Coupon, id=coupon_id)
 
+        # Check expiry
         if coupon.expiry_date < timezone.now().date():
             return Response(
                 {"success": False, "message": "This coupon has expired."},
@@ -487,12 +490,13 @@ class RedeemCouponView(APIView):
                 defaults={"total_points": 0}
             )
 
+            # Lock row to prevent race conditions
             user_points = UserPoints.objects.select_for_update().get(pk=user_points_obj.pk)
 
+            # Prevent redeeming same coupon twice (checks positive and negative)
             already_redeemed = Transaction.objects.filter(
                 user=user,
-                coupon=coupon,
-                points__lt=0
+                coupon=coupon
             ).exists()
 
             if already_redeemed:
@@ -504,6 +508,7 @@ class RedeemCouponView(APIView):
 
             points_required = int(coupon.points_required or 0)
 
+            # Check sufficient points
             if user_points.total_points < points_required:
                 return Response({
                     "success": False,
@@ -511,22 +516,27 @@ class RedeemCouponView(APIView):
                     "remaining_points": user_points.total_points
                 }, status=status.HTTP_400_BAD_REQUEST)
 
-            # ✅ CORRECT DEDUCTION
+            # ============================================
+            # 🔥 DEDUCT USER POINTS (LIVE UPDATE)
+            # ============================================
             UserPoints.objects.filter(pk=user_points.pk).update(
                 total_points=F("total_points") - points_required
             )
+            user_points.refresh_from_db()  # ensures fresh value
 
-            user_points.refresh_from_db()
-
-            # ✅ TRANSACTION SAVED AS NEGATIVE (BACKEND ONLY)
+            # ============================================
+            # 🔥 SAVE TRANSACTION AS POSITIVE POINTS
+            # ============================================
             Transaction.objects.create(
                 user=user,
                 merchant=coupon.merchant,
                 coupon=coupon,
-                points=-points_required
+                points=points_required   # 👍 POSITIVE ONLY
             )
 
-            # ✅ ACTIVITY LOG
+            # ============================================
+            # 🔥 LOG NEGATIVE ACTIVITY (to show deduction history)
+            # ============================================
             UserActivity.objects.create(
                 user=user,
                 activity_type="redeem_coupon",
@@ -937,6 +947,7 @@ class MerchantScanQRAPIView(APIView):
             },
             status=status.HTTP_200_OK
         )
+
 
 
 
