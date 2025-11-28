@@ -559,14 +559,15 @@ class RedeemCouponView(APIView):
 ##################################################################################################################################################################################################
 #########################################################################################################################################################################################################
 # ============================= CUSTOMER COUPONS LIST API =============================new updated
+# ============================= CUSTOMER COUPONS LIST API =============================
 class CustomerCouponsView(APIView):
     """
     GET /api/customer/coupons/
     Returns:
       - user_points
-      - available_coupons (all not expired coupons)
+      - available_coupons (ALL coupons, not expired)
       - redeemed_coupons (user history)
-      - For convenience each available coupon includes whether the current user already redeemed it
+      - available_coupons includes user_has_redeemed flag
     """
     permission_classes = [IsAuthenticated]
 
@@ -574,29 +575,32 @@ class CustomerCouponsView(APIView):
         user = request.user
         today = timezone.now().date()
 
-        # Ensure user points exist and fetch current total
+        # Ensure user points exist
         user_points_obj, _ = UserPoints.objects.get_or_create(
             user=user,
             defaults={"total_points": 0}
         )
-        # Best to fetch the latest value from DB (no lock needed for read)
         user_points_obj.refresh_from_db(fields=["total_points"])
-        current_points = user_points_obj.total_points
+        current_points = int(user_points_obj.total_points or 0)
 
-        # All coupons that are not expired (keeps coupons visible even after redeem)
+        # ==============================================================
+        # ALL AVAILABLE COUPONS (Not expired, independent of user)
+        # ==============================================================
         available_coupons = Coupon.objects.filter(
             expiry_date__gte=today
         ).order_by('-created_at')
 
-        # Pre-fetch user's redeemed coupon ids for quick checking
+        # ==============================================================
+        # Redeemed coupons list (NEW LOGIC)
+        # ==============================================================
         redeemed_coupon_ids = set(
             Transaction.objects.filter(
                 user=user,
-                coupon__isnull=False,
-                points__lt=0
+                coupon__isnull=False
             ).values_list("coupon_id", flat=True)
         )
 
+        # Build available coupons output
         available_coupons_data = []
         for coupon in available_coupons:
             available_coupons_data.append({
@@ -611,11 +615,12 @@ class CustomerCouponsView(APIView):
                 "user_has_redeemed": coupon.id in redeemed_coupon_ids,
             })
 
-        # Redeemed transactions (history)
+        # ==============================================================
+        # Redeemed coupons history
+        # ==============================================================
         redeemed_transactions = Transaction.objects.filter(
             user=user,
-            coupon__isnull=False,
-            points__lt=0
+            coupon__isnull=False
         ).select_related("coupon", "coupon__merchant").order_by("-created_at")
 
         redeemed_coupons_data = []
@@ -626,11 +631,13 @@ class CustomerCouponsView(APIView):
                 "title": coupon.title,
                 "merchant_name": coupon.merchant.company_name if coupon.merchant else None,
                 "redeemed_date": tx.created_at,
-                # points_used should be positive for readability
-                "points_used": abs(tx.points),
-                "transaction_id": tx.id
+                "points_used": abs(int(tx.points)),   # always positive
+                "transaction_id": str(tx.id)
             })
 
+        # ==============================================================
+        # FINAL RESPONSE
+        # ==============================================================
         return Response(
             {
                 "user_points": current_points,
@@ -947,6 +954,7 @@ class MerchantScanQRAPIView(APIView):
             },
             status=status.HTTP_200_OK
         )
+
 
 
 
