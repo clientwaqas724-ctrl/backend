@@ -17,6 +17,14 @@ from django.db.models import Sum, Count
 from django.utils.timezone import now
 from datetime import timedelta
 from django.db.models import Sum, Count, Q
+from django.shortcuts import get_object_or_404
+from django.db import transaction
+from django.db.models import F
+from django.utils import timezone
+from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
 #########################################################################
 ###########################################################################new update
 from django.contrib.auth import get_user_model
@@ -509,6 +517,7 @@ class RedeemCouponView(APIView):
     POST /api/redeem-coupon/
     Redeem a coupon using UserPoints.total_points.
     Coupon is NOT marked as USED so all users can still view it.
+    Ensures atomic update of user points and logs the transaction after deduction.
     """
     permission_classes = [IsAuthenticated]
 
@@ -522,90 +531,105 @@ class RedeemCouponView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Get coupon
         coupon = get_object_or_404(Coupon, id=coupon_id)
 
-        # Validate
+        # Validate expiry and status rules that must be enforced
         if coupon.expiry_date < timezone.now().date():
             return Response(
                 {"success": False, "message": "This coupon has expired."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Get / Create UserPoints
-        user_points, _ = UserPoints.objects.get_or_create(
-            user=user,
-            defaults={"total_points": 0}
-        )
+        # Use a DB transaction + row lock for the user's points to avoid races
+        with transaction.atomic():
+            # get_or_create then re-fetch with select_for_update to lock the row
+            user_points_obj, created = UserPoints.objects.get_or_create(
+                user=user,
+                defaults={"total_points": 0}
+            )
 
-        # Prevent duplicate redemption
-        already_redeemed = Transaction.objects.filter(
-            user=user,
-            coupon=coupon,
-            points__lt=0
-        ).exists()
+            # If newly created there's no need to lock again, but safe to reselect and lock.
+            user_points = (
+                UserPoints.objects.select_for_update()
+                .get(pk=user_points_obj.pk)
+            )
 
-        if already_redeemed:
+            # Prevent duplicate redemption for same coupon by same user
+            already_redeemed = Transaction.objects.filter(
+                user=user,
+                coupon=coupon,
+                points__lt=0
+            ).exists()
+
+            if already_redeemed:
+                return Response(
+                    {
+                        "success": False,
+                        "message": f"You already redeemed this coupon.",
+                        "remaining_points": user_points.total_points,
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Check sufficient points
+            points_required = int(coupon.points_required or 0)
+            if user_points.total_points < points_required:
+                return Response(
+                    {
+                        "success": False,
+                        "message": (
+                            f"Not enough points. Required: {points_required}, "
+                            f"Available: {user_points.total_points}"
+                        ),
+                        "remaining_points": user_points.total_points,
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Deduct points atomically using F expression and then refresh from DB
+            # Use update to avoid race between read and write
+            UserPoints.objects.filter(pk=user_points.pk).update(
+                total_points=F("total_points") - points_required
+            )
+
+            # Refresh object to get new value from DB
+            user_points.refresh_from_db(fields=["total_points"])
+
+            # Create transaction record AFTER the points were deducted.
+            # Store negative points to indicate deduction as before.
+            Transaction.objects.create(
+                user=user,
+                merchant=coupon.merchant,
+                coupon=coupon,
+                points=-points_required
+            )
+
+            # Log user activity
+            UserActivity.objects.create(
+                user=user,
+                activity_type="redeem_coupon",
+                description=f"Redeemed coupon: {coupon.title}",
+                points=-points_required,
+                related_coupon=coupon
+            )
+
+            # DO NOT change coupon.status — keep coupon visible to all users
+
+            # Build response
             return Response(
                 {
-                    "success": False,
-                    "message": f"You already redeemed this coupon.",
+                    "success": True,
+                    "message": "Coupon redeemed successfully!",
                     "remaining_points": user_points.total_points,
+                    "coupon": {
+                        "id": str(coupon.id),
+                        "title": coupon.title,
+                        "points_required": points_required,
+                        "image": coupon.image.url if getattr(coupon, "image", None) else getattr(coupon, "image_url", None)
+                    }
                 },
-                status=status.HTTP_400_BAD_REQUEST
+                status=status.HTTP_200_OK
             )
-
-        # Check if enough points exist
-        if user_points.total_points < coupon.points_required:
-            return Response(
-                {
-                    "success": False,
-                    "message": (
-                        f"Not enough points. Required: {coupon.points_required}, "
-                        f"Available: {user_points.total_points}"
-                    ),
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # Deduct points
-        user_points.total_points -= coupon.points_required
-        user_points.save(update_fields=["total_points"])
-
-        # Log transaction
-        Transaction.objects.create(
-            user=user,
-            merchant=coupon.merchant,
-            coupon=coupon,
-            points=-coupon.points_required
-        )
-
-        # Log user activity
-        UserActivity.objects.create(
-            user=user,
-            activity_type="redeem_coupon",
-            description=f"Redeemed coupon: {coupon.title}",
-            points=-coupon.points_required,
-            related_coupon=coupon
-        )
-
-        # NOTE: We DO NOT change coupon.status here.
-        # Coupon stays ACTIVE for ALL USERS.
-
-        return Response(
-            {
-                "success": True,
-                "message": "Coupon redeemed successfully!",
-                "remaining_points": user_points.total_points,
-                "coupon": {
-                    "id": str(coupon.id),
-                    "title": coupon.title,
-                    "points_required": coupon.points_required,
-                    "image": coupon.image.url if coupon.image else coupon.image_url
-                }
-            },
-            status=status.HTTP_200_OK
-        )
 ##################################################################################################################################################################################################
 #########################################################################################################################################################################################################
 # ============================= CUSTOMER COUPONS LIST API =============================new updated
@@ -614,8 +638,9 @@ class CustomerCouponsView(APIView):
     GET /api/customer/coupons/
     Returns:
       - user_points
-      - available_coupons (ALL coupons, active + not expired)
+      - available_coupons (all not expired coupons)
       - redeemed_coupons (user history)
+      - For convenience each available coupon includes whether the current user already redeemed it
     """
     permission_classes = [IsAuthenticated]
 
@@ -623,44 +648,49 @@ class CustomerCouponsView(APIView):
         user = request.user
         today = timezone.now().date()
 
-        # ===============================
-        # USER POINTS
-        # ===============================
-        user_points, _ = UserPoints.objects.get_or_create(
+        # Ensure user points exist and fetch current total
+        user_points_obj, _ = UserPoints.objects.get_or_create(
             user=user,
             defaults={"total_points": 0}
         )
+        # Best to fetch the latest value from DB (no lock needed for read)
+        user_points_obj.refresh_from_db(fields=["total_points"])
+        current_points = user_points_obj.total_points
 
-        # ===============================
-        # AVAILABLE COUPONS (ALL users)
-        # Coupon should remain even after redemption
-        # ===============================
+        # All coupons that are not expired (keeps coupons visible even after redeem)
         available_coupons = Coupon.objects.filter(
             expiry_date__gte=today
         ).order_by('-created_at')
+
+        # Pre-fetch user's redeemed coupon ids for quick checking
+        redeemed_coupon_ids = set(
+            Transaction.objects.filter(
+                user=user,
+                coupon__isnull=False,
+                points__lt=0
+            ).values_list("coupon_id", flat=True)
+        )
 
         available_coupons_data = []
         for coupon in available_coupons:
             available_coupons_data.append({
                 "id": str(coupon.id),
-                "merchant_name": coupon.merchant.company_name,
+                "merchant_name": coupon.merchant.company_name if coupon.merchant else None,
                 "title": coupon.title,
                 "description": coupon.description,
-                "image": coupon.image.url if coupon.image else coupon.image_url,
+                "image": coupon.image.url if getattr(coupon, "image", None) else getattr(coupon, "image_url", None),
                 "points_required": coupon.points_required,
                 "expiry_date": coupon.expiry_date,
-                "status": coupon.status,  # remains ACTIVE
+                "status": coupon.status,
+                "user_has_redeemed": coupon.id in redeemed_coupon_ids,
             })
 
-        # ===============================
-        # USER’S REDEEMED COUPONS
-        # ===============================
+        # Redeemed transactions (history)
         redeemed_transactions = Transaction.objects.filter(
             user=user,
             coupon__isnull=False,
             points__lt=0
-        ).select_related("coupon", "coupon__merchant") \
-         .order_by("-created_at")
+        ).select_related("coupon", "coupon__merchant").order_by("-created_at")
 
         redeemed_coupons_data = []
         for tx in redeemed_transactions:
@@ -668,18 +698,16 @@ class CustomerCouponsView(APIView):
             redeemed_coupons_data.append({
                 "id": str(coupon.id),
                 "title": coupon.title,
-                "merchant_name": coupon.merchant.company_name,
+                "merchant_name": coupon.merchant.company_name if coupon.merchant else None,
                 "redeemed_date": tx.created_at,
-                "status": "redeemed",
+                # points_used should be positive for readability
                 "points_used": abs(tx.points),
+                "transaction_id": tx.id
             })
 
-        # ===============================
-        # RESPONSE
-        # ===============================
         return Response(
             {
-                "user_points": user_points.total_points,
+                "user_points": current_points,
                 "available_coupons": available_coupons_data,
                 "redeemed_coupons": redeemed_coupons_data
             },
@@ -993,6 +1021,7 @@ class MerchantScanQRAPIView(APIView):
             },
             status=status.HTTP_200_OK
         )
+
 
 
 
