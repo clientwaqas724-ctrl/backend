@@ -360,15 +360,6 @@ class UserActivityViewSet(viewsets.ModelViewSet):
 ########################################################################################################################################################################################################
 ####################################################################################################################################################################################################
 class CustomerHomeViewSet(viewsets.ViewSet):
-    """
-    GET /api/merchants/customer/home/
-    Dashboard for customer:
-    - User points (accurate, never negative)
-    - Promotions
-    - Coupons
-    - Activity
-    - Scanning history
-    """
     permission_classes = [IsAuthenticated]
 
     def list(self, request, *args, **kwargs):
@@ -380,103 +371,75 @@ class CustomerHomeViewSet(viewsets.ViewSet):
                 "message": "Access denied. Only customers can view this dashboard."
             }, status=status.HTTP_403_FORBIDDEN)
 
-        # ======================================================
-        # USER POINTS CALCULATION (BUG FIXED: NEVER NEGATIVE)
-        # ======================================================
-        earned_points = Transaction.objects.filter(
-            user=user, points__gt=0
-        ).aggregate(total=Sum('points'))['total'] or 0
+        # =============================
+        # ✅ GET USER POINTS (FRESH)
+        # =============================
+        try:
+            user_points_obj = UserPoints.objects.get(user=user)
+            user_points_obj.refresh_from_db()
+            total_points = int(user_points_obj.total_points or 0)
+            tier_name = user_points_obj.tier.name if user_points_obj.tier else None
+        except UserPoints.DoesNotExist:
+            total_points = 0
+            tier_name = None
 
-        redeemed_points = Transaction.objects.filter(
-            user=user, points__lt=0
-        ).aggregate(total=Sum('points'))['total'] or 0  # already negative
-
-        total_points = earned_points + redeemed_points  # correct math
-
-        user_points = UserPoints.objects.filter(user=user).select_related('tier').first()
-        tier_name = user_points.tier.name if (user_points and user_points.tier) else None
-
-        # ======================================================
-        # PROMOTIONS & COUPONS
-        # ======================================================
+        # =============================
+        # ✅ PROMOTIONS & COUPONS
+        # =============================
         promotions = Promotion.objects.all()
         coupons = Coupon.objects.filter(status=Coupon.STATUS_ACTIVE)
 
-        # ======================================================
-        # RECENT ACTIVITY (ALWAYS POSITIVE POINTS DISPLAY)
-        # ======================================================
+        # =============================
+        # ✅ RECENT ACTIVITY (POSITIVE ONLY)
+        # =============================
         activities = UserActivity.objects.filter(user=user).order_by('-activity_date')[:5]
 
-        if activities.exists():
-            recent_activity_data = [
-                {
-                    "activity_type": a.activity_type,
-                    "points": abs(a.points),
-                    "description": a.description,
-                    "activity_date": a.activity_date,
-                    "related_coupon": a.related_coupon.title if a.related_coupon else None
-                }
-                for a in activities
-            ]
+        recent_activity_data = [
+            {
+                "activity_type": a.activity_type,
+                "points": abs(int(a.points or 0)),
+                "description": a.description,
+                "activity_date": a.activity_date.isoformat() if a.activity_date else None,
+                "related_coupon": a.related_coupon.title if a.related_coupon else None
+            }
+            for a in activities
+        ]
 
-        else:
-            transactions = Transaction.objects.filter(user=user).order_by('-created_at')[:5]
-            import random
-
-            if transactions.exists():
-                recent_activity_data = [
-                    {
-                        "activity_type": "Redeemed" if tx.points < 0 else "Earned",
-                        "points": abs(tx.points),
-                        "description": f"{user.email} {'redeemed' if tx.points < 0 else 'earned'} {abs(tx.points)} points",
-                        "activity_date": tx.created_at
-                    }
-                    for tx in transactions
-                ]
-            else:
-                recent_activity_data = []
-
-        # ======================================================
-        # SCANNING HISTORY (FIXED: POINT ALWAYS POSITIVE)
-        # ======================================================
+        # =============================
+        # ✅ SCANNING / TRANSACTIONS (POSITIVE ONLY)
+        # =============================
         scan_history = Transaction.objects.filter(user=user).select_related(
             'merchant', 'outlet', 'coupon'
         ).order_by('-created_at')
 
-        scanning_history_output = [
-            {
+        scanning_history_output = []
+
+        for tx in scan_history:
+            scanning_history_output.append({
                 "transaction_id": str(tx.id),
                 "transaction_type": "earned" if tx.points > 0 else "redeemed",
-                "points": abs(tx.points),
-                "date": tx.created_at,
-
+                "points": abs(int(tx.points or 0)),   # ✅ NO NEGATIVE IN UI
+                "date": tx.created_at.isoformat() if tx.created_at else None,
                 "merchant": {
                     "id": str(tx.merchant.id),
-                    "name": tx.merchant.company_name,
-                    "logo_url": tx.merchant.logo_url
+                    "name": getattr(tx.merchant, "company_name", None),
+                    "logo_url": getattr(tx.merchant, "logo_url", None)
                 } if tx.merchant else None,
-
                 "outlet": {
                     "id": str(tx.outlet.id),
-                    "name": tx.outlet.name,
-                    "image_url": tx.outlet.outlet_image_url if tx.outlet else None
+                    "name": getattr(tx.outlet, "name", None),
+                    "image_url": getattr(tx.outlet, "outlet_image_url", None)
                 } if tx.outlet else None,
-
                 "coupon": {
                     "id": str(tx.coupon.id),
                     "title": tx.coupon.title,
-                    "image_url": (
-                        tx.coupon.image.url if tx.coupon and tx.coupon.image
-                        else tx.coupon.image_url
-                    )
+                    "image_url": tx.coupon.image.url if tx.coupon.image else tx.coupon.image_url
                 } if tx.coupon else None
-            }
-            for tx in scan_history
-        ]
+            })
 
-        # ======================================================
-        # FINAL RESPONSE
-        # ======================================================
+        # =============================
+        # ✅ FINAL RESPONSE
+        # =============================
         return Response({
             "success": True,
             "message": "Dashboard data retrieved successfully",
@@ -484,8 +447,8 @@ class CustomerHomeViewSet(viewsets.ViewSet):
                 "user": {
                     "id": str(user.id),
                     "email": user.email,
-                    "name": user.name,
-                    "role": user.role,
+                    "name": getattr(user, "name", None),
+                    "role": getattr(user, "role", None),
                     "total_points": total_points,
                     "tier": tier_name,
                 },
@@ -498,12 +461,6 @@ class CustomerHomeViewSet(viewsets.ViewSet):
 #####################################################################################################################################################################################################
 ###########################################################################################################################################################################################################
 class RedeemCouponView(APIView):
-    """
-    POST /api/redeem-coupon/
-    Redeem a coupon using UserPoints.total_points.
-    Coupon is NOT marked as USED so all users can still view it.
-    Ensures atomic update of user points and logs the transaction after deduction.
-    """
     permission_classes = [IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
@@ -518,28 +475,20 @@ class RedeemCouponView(APIView):
 
         coupon = get_object_or_404(Coupon, id=coupon_id)
 
-        # Validate expiry and status rules that must be enforced
         if coupon.expiry_date < timezone.now().date():
             return Response(
                 {"success": False, "message": "This coupon has expired."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Use a DB transaction + row lock for the user's points to avoid races
         with transaction.atomic():
-            # get_or_create then re-fetch with select_for_update to lock the row
             user_points_obj, created = UserPoints.objects.get_or_create(
                 user=user,
                 defaults={"total_points": 0}
             )
 
-            # If newly created there's no need to lock again, but safe to reselect and lock.
-            user_points = (
-                UserPoints.objects.select_for_update()
-                .get(pk=user_points_obj.pk)
-            )
+            user_points = UserPoints.objects.select_for_update().get(pk=user_points_obj.pk)
 
-            # Prevent duplicate redemption for same coupon by same user
             already_redeemed = Transaction.objects.filter(
                 user=user,
                 coupon=coupon,
@@ -547,41 +496,29 @@ class RedeemCouponView(APIView):
             ).exists()
 
             if already_redeemed:
-                return Response(
-                    {
-                        "success": False,
-                        "message": f"You already redeemed this coupon.",
-                        "remaining_points": user_points.total_points,
-                    },
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+                return Response({
+                    "success": False,
+                    "message": "You already redeemed this coupon.",
+                    "remaining_points": user_points.total_points
+                }, status=status.HTTP_400_BAD_REQUEST)
 
-            # Check sufficient points
             points_required = int(coupon.points_required or 0)
-            if user_points.total_points < points_required:
-                return Response(
-                    {
-                        "success": False,
-                        "message": (
-                            f"Not enough points. Required: {points_required}, "
-                            f"Available: {user_points.total_points}"
-                        ),
-                        "remaining_points": user_points.total_points,
-                    },
-                    status=status.HTTP_400_BAD_REQUEST
-                )
 
-            # Deduct points atomically using F expression and then refresh from DB
-            # Use update to avoid race between read and write
+            if user_points.total_points < points_required:
+                return Response({
+                    "success": False,
+                    "message": "Not enough points",
+                    "remaining_points": user_points.total_points
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            # ✅ CORRECT DEDUCTION
             UserPoints.objects.filter(pk=user_points.pk).update(
                 total_points=F("total_points") - points_required
             )
 
-            # Refresh object to get new value from DB
-            user_points.refresh_from_db(fields=["total_points"])
+            user_points.refresh_from_db()
 
-            # Create transaction record AFTER the points were deducted.
-            # Store negative points to indicate deduction as before.
+            # ✅ TRANSACTION SAVED AS NEGATIVE (BACKEND ONLY)
             Transaction.objects.create(
                 user=user,
                 merchant=coupon.merchant,
@@ -589,32 +526,26 @@ class RedeemCouponView(APIView):
                 points=-points_required
             )
 
-            # Log user activity
+            # ✅ ACTIVITY LOG
             UserActivity.objects.create(
                 user=user,
                 activity_type="redeem_coupon",
-                description=f"Redeemed coupon: {coupon.title}",
+                description=f"Redeemed coupon {coupon.title}",
                 points=-points_required,
                 related_coupon=coupon
             )
 
-            # DO NOT change coupon.status — keep coupon visible to all users
-
-            # Build response
-            return Response(
-                {
-                    "success": True,
-                    "message": "Coupon redeemed successfully!",
-                    "remaining_points": user_points.total_points,
-                    "coupon": {
-                        "id": str(coupon.id),
-                        "title": coupon.title,
-                        "points_required": points_required,
-                        "image": coupon.image.url if getattr(coupon, "image", None) else getattr(coupon, "image_url", None)
-                    }
-                },
-                status=status.HTTP_200_OK
-            )
+            return Response({
+                "success": True,
+                "message": "Coupon redeemed successfully",
+                "remaining_points": user_points.total_points,
+                "coupon": {
+                    "id": str(coupon.id),
+                    "title": coupon.title,
+                    "points_required": points_required,
+                    "image": coupon.image.url if coupon.image else coupon.image_url
+                }
+            }, status=status.HTTP_200_OK)
 ##################################################################################################################################################################################################
 #########################################################################################################################################################################################################
 # ============================= CUSTOMER COUPONS LIST API =============================new updated
@@ -1006,6 +937,7 @@ class MerchantScanQRAPIView(APIView):
             },
             status=status.HTTP_200_OK
         )
+
 
 
 
