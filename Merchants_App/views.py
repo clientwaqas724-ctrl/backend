@@ -507,8 +507,8 @@ class CustomerHomeViewSet(viewsets.ViewSet):
 class RedeemCouponView(APIView):
     """
     POST /api/redeem-coupon/
-    Redeem a coupon using user's points.
-    Handles active/expired/used status and logs transactions and user activity.
+    Redeem a coupon using only UserPoints.total_points (no transaction history).
+    Sets coupon to USED after successful redemption.
     """
     permission_classes = [IsAuthenticated]
 
@@ -516,100 +516,108 @@ class RedeemCouponView(APIView):
         user = request.user
         coupon_id = request.data.get("coupon_id")
 
+        # 1. Validate coupon_id
         if not coupon_id:
             return Response(
                 {"success": False, "message": "coupon_id is required."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        # 2. Get coupon
         coupon = get_object_or_404(Coupon, id=coupon_id)
 
-        # Check coupon status
-        if coupon.status == Coupon.STATUS_USED:
-            return Response(
-                {"success": False, "message": "This coupon has already been redeemed."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
+        # 3. Validate coupon
         if coupon.status != Coupon.STATUS_ACTIVE:
             return Response(
-                {"success": False, "message": f"This coupon is not active (status: {coupon.status})."},
+                {"success": False, "message": "This coupon is not active."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Check expiry
-        today = timezone.now().date()
-        if coupon.expiry_date < today:
-            coupon.status = Coupon.STATUS_EXPIRED
-            coupon.save(update_fields=['status'])
+        if coupon.expiry_date < timezone.now().date():
             return Response(
                 {"success": False, "message": "This coupon has expired."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Get user's current points from UserPoints
-        try:
-            user_points_obj = UserPoints.objects.get(user=user)
-            current_points = user_points_obj.total_points
-        except UserPoints.DoesNotExist:
-            current_points = 0
+        # 4. Get user points
+        user_points, _ = UserPoints.objects.get_or_create(
+            user=user,
+            defaults={"total_points": 0}
+        )
 
-        if current_points < coupon.points_required:
+        # 5. Check duplicate redemption
+        already_redeemed = Transaction.objects.filter(
+            user=user,
+            coupon=coupon,
+            points__lt=0
+        ).exists()
+
+        if already_redeemed:
+            return Response(
+                {
+                    "success": False,
+                    "message": f"You already redeemed this coupon: {coupon.title}",
+                    "data": {
+                        "coupon": {"id": str(coupon.id), "title": coupon.title},
+                        "remaining_points": user_points.total_points,
+                    },
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 6. Check if user has enough points
+        if user_points.total_points < coupon.points_required:
             return Response(
                 {
                     "success": False,
                     "message": (
                         f"Not enough points. You need {coupon.points_required}, "
-                        f"but you only have {current_points}."
+                        f"but you only have {user_points.total_points}."
                     ),
-                    "data": {"remaining_points": current_points},
+                    "data": {"remaining_points": user_points.total_points},
                 },
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Deduct points
-        remaining_points = current_points - coupon.points_required
-        user_points_obj.total_points = remaining_points
-        user_points_obj.save(update_fields=['total_points'])
+        # 7. Deduct required points
+        user_points.total_points -= coupon.points_required
+        user_points.save(update_fields=["total_points"])
 
-        # Log redemption in Transaction
+        remaining_points = user_points.total_points
+
+        # 8. Log transaction
         Transaction.objects.create(
             user=user,
             merchant=coupon.merchant,
             coupon=coupon,
-            points=coupon.points_required,  # POSITIVE points
-            transaction_type="redemption"
+            points=-coupon.points_required
         )
 
-        # Log user activity
+        # 9. Log User Activity
         UserActivity.objects.create(
             user=user,
             activity_type="redeem_coupon",
             description=f"Redeemed coupon: {coupon.title}",
-            points=coupon.points_required,
+            points=-coupon.points_required,
             related_coupon=coupon
         )
 
-        # Update coupon status
+        # 10. Update coupon status → USED
         coupon.status = Coupon.STATUS_USED
         coupon.save(update_fields=["status"])
 
-        coupon_image_url = coupon.image.url if coupon.image else coupon.image_url
-
+        # 11. Final response
         return Response(
             {
                 "success": True,
-                "message": "Coupon redeemed successfully!",
+                "message": "Coupon redeemed and marked as USED successfully!",
                 "data": {
                     "coupon": {
                         "id": str(coupon.id),
                         "title": coupon.title,
                         "status": coupon.status,
-                        "image_url": coupon_image_url,
-                        "points_required": coupon.points_required
+                        "image": coupon.image_url if hasattr(coupon, "image_url") else None
                     },
-                    "points_used": coupon.points_required,
-                    "previous_points": current_points,
                     "remaining_points": remaining_points,
                 },
             },
@@ -621,122 +629,76 @@ class RedeemCouponView(APIView):
 class CustomerCouponsView(APIView):
     """
     GET /api/customer/coupons/
-    Shows:
-      - available_coupons → ALL coupons
-      - redeemed_coupons → only user's redeemed coupons
-      - expired_coupons  → optional (still included)
-      - current_points → user's current points from UserPoints
+    Returns:
+      - available_coupons (active and not expired)
+      - redeemed_coupons (from transactions)
     """
     permission_classes = [IsAuthenticated]
-
-    def get_status_text(self, status_code):
-        return {
-            Coupon.STATUS_ACTIVE: "Active",
-            Coupon.STATUS_USED: "Used",
-            Coupon.STATUS_EXPIRED: "Expired",
-            Coupon.STATUS_INACTIVE: "Inactive",
-        }.get(status_code, "Unknown")
 
     def get(self, request, *args, **kwargs):
         user = request.user
         today = timezone.now().date()
 
-        # Get user's current points
-        try:
-            user_points_obj = UserPoints.objects.get(user=user)
-            current_points = user_points_obj.total_points
-        except UserPoints.DoesNotExist:
-            current_points = 0
+        # ================================
+        # ✅ Available coupons (active & not expired)
+        # ================================
+        available_coupons = Coupon.objects.filter(
+            status=Coupon.STATUS_ACTIVE,
+            expiry_date__gte=today
+        ).order_by('-created_at')
 
-        # Auto-update expired coupons
-        Coupon.objects.filter(
-            expiry_date__lt=today,
-            status=Coupon.STATUS_ACTIVE
-        ).update(status=Coupon.STATUS_EXPIRED)
-
-        # AVAILABLE COUPONS
-        all_coupons = Coupon.objects.all().order_by('-created_at')
-        available_coupons = []
-        for coupon in all_coupons:
-            real_status = Coupon.STATUS_EXPIRED if coupon.expiry_date < today else coupon.status
-            remaining_days = max((coupon.expiry_date - today).days, 0)
-            coupon_image_url = coupon.image.url if coupon.image else coupon.image_url
-
-            available_coupons.append({
+        available_coupons_data = []
+        for coupon in available_coupons:
+            available_coupons_data.append({
                 "id": str(coupon.id),
                 "merchant": str(coupon.merchant.id),
                 "merchant_name": coupon.merchant.company_name,
                 "title": coupon.title,
                 "description": coupon.description,
                 "image": coupon.image.url if coupon.image else None,
-                "image_url": coupon_image_url,
+                "image_url": coupon.image_url,
                 "points_required": coupon.points_required,
                 "start_date": coupon.start_date,
                 "expiry_date": coupon.expiry_date,
-                "remaining_days": remaining_days,
                 "terms_and_conditions_text": coupon.terms_and_conditions_text,
                 "code": coupon.code,
-                "status": real_status,
-                "status_text": self.get_status_text(real_status),
+                "status": coupon.status,
                 "created_at": coupon.created_at,
             })
 
-        # REDEEMED COUPONS
+        # ================================
+        # ✅ Redeemed coupons (via Transaction)
+        # ================================
         redeemed_transactions = (
             Transaction.objects.filter(
                 user=user,
                 coupon__isnull=False,
-                points__gt=0
+                points__lt=0  # redeemed
             )
             .select_related('coupon', 'coupon__merchant')
             .order_by('-created_at')
         )
 
-        redeemed_coupons = []
+        redeemed_coupons_data = []
         for tx in redeemed_transactions:
             coupon = tx.coupon
-            coupon_image_url = coupon.image.url if coupon.image else coupon.image_url
-
-            redeemed_coupons.append({
+            redeemed_coupons_data.append({
                 "id": str(coupon.id),
                 "title": coupon.title,
-                "merchant_name": coupon.merchant.company_name,
                 "code": coupon.code,
+                "merchant_name": coupon.merchant.company_name,
                 "redeemed_date": tx.created_at,
-                "status": Coupon.STATUS_USED,
-                "status_text": self.get_status_text(Coupon.STATUS_USED),
-                "points_used": tx.points,
-                "image_url": coupon_image_url,
-                "description": coupon.description,
+                "status": "redeemed",
+                "points_used": abs(tx.points),
             })
 
-        # EXPIRED COUPONS
-        expired_qs = Coupon.objects.filter(
-            expiry_date__lt=today
-        ).order_by('-created_at')
-
-        expired_coupons = []
-        for coupon in expired_qs:
-            coupon_image_url = coupon.image.url if coupon.image else coupon.image_url
-
-            expired_coupons.append({
-                "id": str(coupon.id),
-                "title": coupon.title,
-                "merchant_name": coupon.merchant.company_name,
-                "code": coupon.code,
-                "expiry_date": coupon.expiry_date,
-                "status": Coupon.STATUS_EXPIRED,
-                "status_text": self.get_status_text(Coupon.STATUS_EXPIRED),
-                "image_url": coupon_image_url,
-                "points_required": coupon.points_required,
-            })
-
+        # ================================
+        # ✅ Final response
+        # ================================
         return Response(
             {
-                "current_points": current_points,
-                "available_coupons": available_coupons,
-                "redeemed_coupons": redeemed_coupons,
-                "expired_coupons": expired_coupons,
+                "available_coupons": available_coupons_data,
+                "redeemed_coupons": redeemed_coupons_data,
             },
             status=status.HTTP_200_OK
         )
@@ -1048,6 +1010,7 @@ class MerchantScanQRAPIView(APIView):
             },
             status=status.HTTP_200_OK
         )
+
 
 
 
