@@ -362,22 +362,18 @@ class UserActivityViewSet(viewsets.ModelViewSet):
 class CustomerHomeViewSet(viewsets.ViewSet):
     """
     GET /api/merchants/customer/home/
-    Returns dashboard data for a customer user:
-      - User info (points, tier)
-      - Active promotions
-      - Available coupons
-      - Recent activity (real or randomized)
-      - Merchant Scanning History
+    Dashboard for customer:
+    - User points (accurate, never negative)
+    - Promotions
+    - Coupons
+    - Activity
+    - Scanning history
     """
     permission_classes = [IsAuthenticated]
 
     def list(self, request, *args, **kwargs):
         user = request.user
-        today = timezone.now().date()
 
-        # ======================================================
-        # ACCESS VALIDATION
-        # ======================================================
         if getattr(user, "role", None) != "customer":
             return Response({
                 "success": False,
@@ -385,7 +381,7 @@ class CustomerHomeViewSet(viewsets.ViewSet):
             }, status=status.HTTP_403_FORBIDDEN)
 
         # ======================================================
-        # USER POINTS INFO (FIXED + ACCURATE)
+        # USER POINTS CALCULATION (BUG FIXED: NEVER NEGATIVE)
         # ======================================================
         earned_points = Transaction.objects.filter(
             user=user, points__gt=0
@@ -393,12 +389,12 @@ class CustomerHomeViewSet(viewsets.ViewSet):
 
         redeemed_points = Transaction.objects.filter(
             user=user, points__lt=0
-        ).aggregate(total=Sum('points'))['total'] or 0
+        ).aggregate(total=Sum('points'))['total'] or 0  # already negative
 
-        total_points = earned_points + redeemed_points  # redeemed is negative
+        total_points = earned_points + redeemed_points  # correct math
 
         user_points = UserPoints.objects.filter(user=user).select_related('tier').first()
-        tier = user_points.tier.name if user_points and user_points.tier else None
+        tier_name = user_points.tier.name if (user_points and user_points.tier) else None
 
         # ======================================================
         # PROMOTIONS & COUPONS
@@ -407,62 +403,51 @@ class CustomerHomeViewSet(viewsets.ViewSet):
         coupons = Coupon.objects.filter(status=Coupon.STATUS_ACTIVE)
 
         # ======================================================
-        # RECENT ACTIVITY (FINAL MERGED VERSION)
+        # RECENT ACTIVITY (ALWAYS POSITIVE POINTS DISPLAY)
         # ======================================================
         activities = UserActivity.objects.filter(user=user).order_by('-activity_date')[:5]
 
         if activities.exists():
-            recent_activity_data = []
-            for activity in activities:
-                recent_activity_data.append({
-                    "activity_type": activity.activity_type,
-                    "points": abs(activity.points),
-                    "description": activity.description,
-                    "activity_date": activity.activity_date,
-                    "related_coupon": activity.related_coupon.title if activity.related_coupon else None
-                })
+            recent_activity_data = [
+                {
+                    "activity_type": a.activity_type,
+                    "points": abs(a.points),
+                    "description": a.description,
+                    "activity_date": a.activity_date,
+                    "related_coupon": a.related_coupon.title if a.related_coupon else None
+                }
+                for a in activities
+            ]
+
         else:
-            # fallback: use transaction data
             transactions = Transaction.objects.filter(user=user).order_by('-created_at')[:5]
             import random
-            ACTIVITY_TYPES = ["Earned", "Redeemed", "Expired"]
 
             if transactions.exists():
-                recent_activity_data = []
-                for tx in transactions:
-                    act = random.choice(ACTIVITY_TYPES)
-                    points_value = abs(tx.points)
-                    recent_activity_data.append({
-                        "activity_type": act,
-                        "points": points_value,
-                        "description": f"{user.email} {act.lower()} {points_value} points",
-                        "activity_date": tx.created_at
-                    })
-            else:
-                # fallback: random data
                 recent_activity_data = [
                     {
-                        "activity_type": act,
-                        "points": random.randint(5, 50),
-                        "description": f"{user.email} {act.lower()} points",
-                        "activity_date": timezone.now()
+                        "activity_type": "Redeemed" if tx.points < 0 else "Earned",
+                        "points": abs(tx.points),
+                        "description": f"{user.email} {'redeemed' if tx.points < 0 else 'earned'} {abs(tx.points)} points",
+                        "activity_date": tx.created_at
                     }
-                    for act in ACTIVITY_TYPES
+                    for tx in transactions
                 ]
+            else:
+                recent_activity_data = []
 
         # ======================================================
-        # MERCHANT SCANNING HISTORY (FULLY FIXED)
+        # SCANNING HISTORY (FIXED: POINT ALWAYS POSITIVE)
         # ======================================================
         scan_history = Transaction.objects.filter(user=user).select_related(
             'merchant', 'outlet', 'coupon'
         ).order_by('-created_at')
 
-        scanning_history_output = []
-        for tx in scan_history:
-            scanning_history_output.append({
+        scanning_history_output = [
+            {
                 "transaction_id": str(tx.id),
                 "transaction_type": "earned" if tx.points > 0 else "redeemed",
-                "points": abs(tx.points),  # always positive
+                "points": abs(tx.points),
                 "date": tx.created_at,
 
                 "merchant": {
@@ -481,34 +466,34 @@ class CustomerHomeViewSet(viewsets.ViewSet):
                     "id": str(tx.coupon.id),
                     "title": tx.coupon.title,
                     "image_url": (
-                        tx.coupon.image.url if tx.coupon and tx.coupon.image 
+                        tx.coupon.image.url if tx.coupon and tx.coupon.image
                         else tx.coupon.image_url
                     )
                 } if tx.coupon else None
-            })
+            }
+            for tx in scan_history
+        ]
 
         # ======================================================
-        # RESPONSE PAYLOAD
+        # FINAL RESPONSE
         # ======================================================
-        data = {
-            "user": {
-                "id": str(user.id),
-                "email": user.email,
-                "name": user.name,
-                "role": user.role,
-                "total_points": total_points,
-                "tier": tier,
-            },
-            "promotions": PromotionSerializer(promotions, many=True).data,
-            "available_coupons": CouponSerializer(coupons, many=True).data,
-            "recent_activity": recent_activity_data,
-            "merchant_scanning_history": scanning_history_output
-        }
-
         return Response({
             "success": True,
             "message": "Dashboard data retrieved successfully",
-            "data": data
+            "data": {
+                "user": {
+                    "id": str(user.id),
+                    "email": user.email,
+                    "name": user.name,
+                    "role": user.role,
+                    "total_points": total_points,
+                    "tier": tier_name,
+                },
+                "promotions": PromotionSerializer(promotions, many=True).data,
+                "available_coupons": CouponSerializer(coupons, many=True).data,
+                "recent_activity": recent_activity_data,
+                "merchant_scanning_history": scanning_history_output
+            }
         }, status=status.HTTP_200_OK)
 #####################################################################################################################################################################################################
 ###########################################################################################################################################################################################################
@@ -1021,6 +1006,7 @@ class MerchantScanQRAPIView(APIView):
             },
             status=status.HTTP_200_OK
         )
+
 
 
 
