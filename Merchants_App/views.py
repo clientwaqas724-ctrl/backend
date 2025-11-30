@@ -691,7 +691,6 @@ class MerchantDashboardAnalyticsView(APIView):
         ).count()
         total_promotions = Promotion.objects.filter(merchant=merchant).count()
 
-        # 4. Merchant Transactions
         merchant_txns = Transaction.objects.filter(merchant=merchant)
 
         total_customers = merchant_txns.values('user').distinct().count()
@@ -756,7 +755,6 @@ class MerchantDashboardAnalyticsView(APIView):
         } for c in popular_coupons]
 
         # 8. Analytics
-        today = timezone.now().date()
         qr_scans = merchant_txns
 
         daily_scans = []
@@ -768,7 +766,6 @@ class MerchantDashboardAnalyticsView(APIView):
                 "transactions": scans_count
             })
 
-        # Customer growth
         customer_growth = []
         for i in range(6, -1, -1):
             date = today - timedelta(days=i)
@@ -780,10 +777,28 @@ class MerchantDashboardAnalyticsView(APIView):
                 "customers": customers_count
             })
 
-        # Points analytics
         total_txns = qr_scans.count()
         total_points = qr_scans.aggregate(total=Sum('points'))['total'] or 0
         avg_points = total_points / total_txns if total_txns > 0 else 0
+
+        # ------------------------------------------------------------
+        # ⭐ MERCHANT SCANNING HISTORY (UserPoints-Based)
+        # ------------------------------------------------------------
+        customer_points_records = UserPoints.objects.select_related('user').order_by('-updated_at')
+
+        scan_history_output = []
+        for record in customer_points_records:
+            scan_history_output.append({
+                "customer": {
+                    "id": str(record.user.id),
+                    "name": record.user.name or record.user.email,
+                    "email": record.user.email
+                },
+                "total_points": record.total_points,
+                "tier": record.tier.name if hasattr(record, 'tier') and record.tier else None,
+                "last_updated": record.updated_at,
+                "profile_image": record.user.profile_image if record.user.profile_image else None
+            })
 
         # 9. Merchant Info
         merchant_info = {
@@ -806,38 +821,6 @@ class MerchantDashboardAnalyticsView(APIView):
             "monthly_transactions": monthly_scans,
             "revenue_impact": f"${points_awarded_today * 2.5:,.0f}",
         }
-
-        # ------------------------------------------------------------
-        # ⭐ NEW SECTION — MERCHANT SCANNING HISTORY
-        # ------------------------------------------------------------
-        merchant_scans = Transaction.objects.filter(
-            merchant=merchant
-        ).select_related('user', 'outlet', 'coupon').order_by('-created_at')
-
-        scan_history_output = []
-        for tx in merchant_scans:
-            scan_history_output.append({
-                "transaction_id": str(tx.id),
-                "customer": {
-                    "id": str(tx.user.id),
-                    "name": tx.user.name or tx.user.email,
-                    "email": tx.user.email
-                },
-                "points": tx.points,
-                "created_at": tx.created_at,
-                "outlet": {
-                    "id": str(tx.outlet.id),
-                    "name": tx.outlet.name,
-                    "image_url": tx.outlet.outlet_image_url
-                } if tx.outlet else None,
-                "coupon": {
-                    "id": str(tx.coupon.id),
-                    "title": tx.coupon.title,
-                    "image_url": tx.coupon.image_url
-                } if tx.coupon else None
-            })
-
-        # ------------------------------------------------------------
 
         # 11. Final Response
         return Response({
@@ -863,8 +846,7 @@ class MerchantDashboardAnalyticsView(APIView):
                         "top_performing_outlet": merchant.outlets.first().name if merchant.outlets.exists() else "N/A"
                     }
                 },
-
-                # ⭐ NEW OUTPUT ADDED HERE
+                # ⭐ SCANNING HISTORY OUTPUT
                 "merchant_scanning_history": scan_history_output
             }
         }, status=status.HTTP_200_OK)
@@ -893,7 +875,7 @@ class MerchantScanQRAPIView(APIView):
         qr_code = request.data.get('qr_code')
         points = int(request.data.get('points', 10))  # default points = 10
 
-        # ✅ Parse QR code to get the customer
+        # ✅ Parse QR to get the customer
         try:
             customer_id = qr_code.split(":")[1]
             customer = User.objects.get(id=customer_id, role='customer')
@@ -909,51 +891,50 @@ class MerchantScanQRAPIView(APIView):
             defaults={'company_name': f"{user.name}'s Company"}
         )
 
-        # ✅ Get the first active coupon for this merchant (optional logic)
+        # ✅ Get first active coupon (if any)
         coupon = Coupon.objects.filter(merchant=merchant_account, status='Active').first()
         outlet = coupon.outlet if coupon else None
 
-        # ✅ Check if customer already scanned this coupon
-        if coupon and Transaction.objects.filter(user=customer, coupon=coupon).exists():
-            # Update coupon status to Used if needed
-            coupon.status = 'Used'
-            coupon.save()
-            return Response(
-                {'error': 'Coupon already used by this customer.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        # ============================
+        # 1️⃣ Update UserPoints
+        # ============================
+        user_points, created = UserPoints.objects.get_or_create(
+            user=customer,
+            defaults={"total_points": points, "tier": None}
+        )
+        if not created:
+            user_points.total_points += points
+            user_points.save()
 
-        # ✅ Record each scan
-        QRScan.objects.create(customer=customer, qr_code=qr_code, points_awarded=points)
-
-        # ✅ Update or create CustomerPoints wallet
-        wallet, _ = CustomerPoints.objects.get_or_create(customer=customer)
-        wallet.total_points += points
-        wallet.save()
-
-        # ✅ Record transaction
+        # ============================
+        # 2️⃣ Create Transaction for dashboard analytics
+        # ============================
         Transaction.objects.create(
             user=customer,
             merchant=merchant_account,
-            outlet=outlet,
-            coupon=coupon,
             points=points,
-            created_at=timezone.now()
+            coupon=coupon,
+            outlet=outlet
         )
 
-        # ✅ Mark coupon as used
+        # ============================
+        # 3️⃣ Mark coupon as used (if exists)
+        # ============================
         if coupon:
             coupon.status = 'Used'
             coupon.save()
 
-        # ✅ Return success
+        # ============================
+        # 4️⃣ Response
+        # ============================
         return Response(
             {
                 'message': f'{points} points awarded to {customer.email}',
-                'total_points': wallet.total_points
+                'total_points': user_points.total_points
             },
             status=status.HTTP_200_OK
         )
+
 
 
 
