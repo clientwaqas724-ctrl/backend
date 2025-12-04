@@ -560,9 +560,8 @@ class CustomerCouponsView(APIView):
     GET /api/customer/coupons/
     Returns:
       - user_points
-      - available_coupons (ALL coupons)
-      - redeemed_coupons (OLD API FORMAT as requested)
-      - available_coupons includes user_has_redeemed flag
+      - available_coupons
+      - redeemed_coupons (real-time status)
     """
     permission_classes = [IsAuthenticated]
 
@@ -570,9 +569,7 @@ class CustomerCouponsView(APIView):
         user = request.user
         today = timezone.now().date()
 
-        # ============================
-        # Ensure user points exist
-        # ============================
+        # Ensure points exist
         user_points_obj, _ = UserPoints.objects.get_or_create(
             user=user,
             defaults={"total_points": 0}
@@ -580,12 +577,10 @@ class CustomerCouponsView(APIView):
         user_points_obj.refresh_from_db(fields=["total_points"])
         current_points = int(user_points_obj.total_points or 0)
 
-        # ==============================================================
-        # SHOW ALL COUPONS FOR ALL USERS (no expiry filter)
-        # ==============================================================
+        # All coupons
         available_coupons = Coupon.objects.all().order_by('-created_at')
 
-        # Get redeemed coupons set
+        # All redeemed coupon IDs
         redeemed_coupon_ids = set(
             Transaction.objects.filter(
                 user=user,
@@ -593,9 +588,7 @@ class CustomerCouponsView(APIView):
             ).values_list("coupon_id", flat=True)
         )
 
-        # ==============================================================
-        # AVAILABLE COUPONS (NEW STRUCTURE)
-        # ==============================================================
+        # ================= Available Coupons =================
         available_coupons_data = []
         for coupon in available_coupons:
             available_coupons_data.append({
@@ -611,9 +604,13 @@ class CustomerCouponsView(APIView):
                 "user_has_redeemed": coupon.id in redeemed_coupon_ids,
             })
 
-        # ==============================================================
-        # REDEEMED COUPONS (OLD API FORMAT REQUESTED)
-        # ==============================================================
+        # ================= Redeemed Coupons (Real-Time Status) =================
+        status_mapping = {
+            Coupon.STATUS_ACTIVE: "Redeemed",   # Before merchant scan
+            Coupon.STATUS_USED: "Used",         # After merchant scan
+            Coupon.STATUS_EXPIRED: "Expired",
+        }
+
         redeemed_transactions = Transaction.objects.filter(
             user=user,
             coupon__isnull=False
@@ -625,16 +622,13 @@ class CustomerCouponsView(APIView):
             redeemed_coupons_data.append({
                 "id": str(coupon.id),
                 "title": coupon.title,
-                "code": coupon.code,  # OLD NAME (not coupon_code)
+                "code": coupon.code,
                 "merchant_name": coupon.merchant.company_name if coupon.merchant else None,
                 "redeemed_date": tx.created_at,
-                "status": "redeemed",  # OLD API logic: always "redeemed"
+                "status": status_mapping.get(coupon.status, "Redeemed"),
                 "points_used": abs(int(tx.points)),
             })
 
-        # ==============================================================
-        # FINAL RESPONSE
-        # ==============================================================
         return Response(
             {
                 "user_points": current_points,
@@ -931,6 +925,7 @@ class MerchantScanQRAPIView(APIView):
             },
             status=status.HTTP_200_OK
         )
+
 
 
 
